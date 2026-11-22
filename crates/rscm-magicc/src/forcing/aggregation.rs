@@ -387,10 +387,10 @@ mod tests {
     use super::*;
     use crate::parameters::{EfficacyClimate, ForcingAgent};
     use rscm_core::forcing::ForcingCategory;
+    use rscm_core::model::resolve_standalone;
     use rscm_core::state::StateValue;
-    use rscm_core::state::{ReadTransformInfo, TransformContext, VariableSource};
-    use rscm_core::timeseries_collection::{TimeseriesData, TimeseriesItem};
-    use std::collections::HashMap;
+    use rscm_core::state::VariableSource;
+    use rscm_core::timeseries_collection::{TimeseriesCollection, TimeseriesData, TimeseriesItem};
 
     fn agent(regional: bool, efficacy: FloatValue, internal: FloatValue) -> ForcingAgent {
         ForcingAgent {
@@ -503,19 +503,26 @@ mod tests {
     }
 
     fn solve_adjusted(c: &ForcingAggregation, ecs: [FloatValue; 2]) -> [FloatValue; 4] {
-        let items = [
+        let mut collection = TimeseriesCollection::new();
+        for item in [
             scalar_item("x", [1.0, 1.0]),
             scalar_item(EQUILIBRIUM_CLIMATE_SENSITIVITY, ecs),
             scalar_item(ERF_2XCO2, [3.9, 4.2]),
-        ];
+        ] {
+            let TimeseriesData::Scalar(ts) = item.data else {
+                unreachable!()
+            };
+            collection.add_timeseries(item.name, ts);
+        }
         // MAGICC7 lags the sensitivity into the aggregation
-        let lagged = TransformContext {
-            read_transforms: HashMap::from([(
-                EQUILIBRIUM_CLIMATE_SENSITIVITY.to_string(),
-                ReadTransformInfo::default().with_source(VariableSource::Lagged),
-            )]),
-        };
-        let input_state = InputState::build_with_transforms(items.iter().collect(), 2000.0, lagged);
+        let mut step = resolve_standalone("ForcingAggregation", &collection, c.inputs()).unwrap();
+        for read in &mut step.reads {
+            if read.definition.name == EQUILIBRIUM_CLIMATE_SENSITIVITY {
+                read.source = VariableSource::Lagged;
+                read.plain = false;
+            }
+        }
+        let input_state = InputState::from_step(&collection, &step, 2000.0);
         let output = c.solve(2000.0, 2001.0, &input_state).unwrap();
         match &output[EFFICACY_ADJUSTED_ERF] {
             StateValue::FourBox(slice) => slice.0,

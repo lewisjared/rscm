@@ -19,6 +19,7 @@ use crate::units;
 
 use super::coupling::{ComponentCoupling, Coupling, CouplingEdge};
 use super::runtime::execution_order;
+use super::storage::grid_transform;
 use super::types::{CGraph, RequiredTransformation, TransformDirection, UnitConversionInfo};
 
 /// How a model steps: each component in execution order, with how it reads and writes.
@@ -142,7 +143,82 @@ pub(crate) fn resolve(decisions: &Decisions) -> RSCMResult<StepPlan> {
 
 fn resolve_step(d: &Decisions, node: NodeIndex) -> RSCMResult<Step> {
     let component = &d.graph[node];
-    let label = d.labels[&node].clone();
+    resolve_definitions(
+        d,
+        node,
+        d.labels[&node].clone(),
+        component.inputs(),
+        component.outputs(),
+    )
+}
+
+/// How a component solved on its own reads `inputs` from `collection`.
+///
+/// Its state reads as its own and every other input as prescribed.
+/// A series with no unit is taken to be in the declared unit.
+pub fn resolve_standalone(
+    label: &str,
+    collection: &TimeseriesCollection,
+    inputs: Vec<VariableDefinition>,
+) -> RSCMResult<Step> {
+    let label = label.to_string();
+    let mut sources = HashMap::new();
+    let mut read_conversions = Vec::new();
+    let mut transformations = Vec::new();
+    let mut timeseries_types = BTreeMap::new();
+    for def in &inputs {
+        let (_, stored) = stored(collection, &def.name)?;
+        let source = match def.role {
+            VariableRole::State => VariableSource::OwnState,
+            _ => VariableSource::Prescribed,
+        };
+        sources.insert((def.name.clone(), label.clone()), source);
+        let stored_unit = stored.unit();
+        if !stored_unit.is_empty() {
+            if let Some(factor) = units::factor(&def.name, stored_unit, &def.unit)? {
+                read_conversions.push(UnitConversionInfo {
+                    variable: def.name.clone(),
+                    component: label.clone(),
+                    factor,
+                    source_unit: stored_unit.to_string(),
+                    target_unit: def.unit.clone(),
+                });
+            }
+        }
+        if let Some(t) = grid_transform(
+            def,
+            &label,
+            stored.grid(),
+            "the data supplied",
+            TransformDirection::Read,
+        )? {
+            transformations.push((label.clone(), t));
+        }
+        timeseries_types.insert(def.name.clone(), def.resolved_timeseries_type());
+    }
+    let graph = CGraph::new();
+    let decisions = Decisions {
+        graph: &graph,
+        initial_node: NodeIndex::end(),
+        labels: &BTreeMap::new(),
+        collection,
+        sources: &sources,
+        producers: &HashMap::new(),
+        read_conversions: &read_conversions,
+        transformations: &transformations,
+        timeseries_types: &timeseries_types,
+        grid_weights: &HashMap::new(),
+    };
+    resolve_definitions(&decisions, NodeIndex::end(), label, inputs, Vec::new())
+}
+
+fn resolve_definitions(
+    d: &Decisions,
+    node: NodeIndex,
+    label: String,
+    inputs: Vec<VariableDefinition>,
+    outputs: Vec<VariableDefinition>,
+) -> RSCMResult<Step> {
     let grid_conversion = |variable: &str, direction| {
         d.transformations
             .iter()
@@ -156,7 +232,7 @@ fn resolve_step(d: &Decisions, node: NodeIndex) -> RSCMResult<Step> {
     };
 
     let mut reads = Vec::new();
-    for definition in component.inputs() {
+    for definition in inputs {
         let (slot, stored) = stored(d.collection, &definition.name)?;
         let source = d
             .sources
@@ -202,7 +278,7 @@ fn resolve_step(d: &Decisions, node: NodeIndex) -> RSCMResult<Step> {
     });
 
     let mut writes = Vec::new();
-    for definition in component.outputs() {
+    for definition in outputs {
         let (slot, stored) = stored(d.collection, &definition.name)?;
         let stored_unit = stored.unit();
         let unit = units::factor(&definition.name, &definition.unit, stored_unit)?.map(|factor| {

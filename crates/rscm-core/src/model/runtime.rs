@@ -3,8 +3,7 @@
 use crate::component::{ComponentState, GridType, TimeseriesType, VariableDefinition};
 use crate::errors::{RSCMError, RSCMResult};
 use crate::state::{
-    lookup_order, FourBoxSlice, HemisphericSlice, InputPlan, InputState, OutputBuffer,
-    ReadTransformInfo, StateValue, VariableSource,
+    FourBoxSlice, HemisphericSlice, InputPlan, InputState, OutputBuffer, StateValue, VariableSource,
 };
 use crate::timeseries::{FloatValue, Time, TimeAxis};
 use crate::timeseries_collection::TimeseriesCollection;
@@ -15,7 +14,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
-use super::plan::{resolve, Decisions, StepPlan};
+use super::plan::{resolve, Decisions, Step, StepPlan, Write};
 use super::transformations::aggregate_state_value;
 use super::types::{CGraph, RequiredTransformation, TransformDirection, UnitConversionInfo};
 
@@ -130,22 +129,33 @@ pub struct Model {
     /// Every coupling decision, resolved by the builder.
     #[serde(default)]
     pub(crate) step_plan: StepPlan,
-    /// Execution order and read context of each component, built on the first step.
+    /// Scratch for stepping each component of the plan, made from it on the first step.
     #[serde(skip)]
-    plan: Option<Vec<ComponentPlan>>,
+    buffers: Option<Vec<StepBuffers>>,
 }
 
-/// What stepping a component needs that is fixed once the model is built.
+/// Buffers for stepping one component, aligned with its [`Step`].
 #[derive(Debug)]
-struct ComponentPlan {
-    node: NodeIndex,
-    name: String,
+struct StepBuffers {
     inputs: InputPlan,
     outputs: OutputBuffer,
-    /// Target of each declared output, aligned with `outputs`.
-    targets: Vec<Option<OutputTarget>>,
     /// Converted outputs of the current step, written only once all of them are valid.
     staged: Vec<StagedOutput>,
+}
+
+impl StepBuffers {
+    fn new(step: &Step) -> Self {
+        Self {
+            inputs: InputPlan::from_step(step),
+            outputs: OutputBuffer::new(
+                step.writes
+                    .iter()
+                    .map(|write| write.definition.name.clone())
+                    .collect(),
+            ),
+            staged: Vec::new(),
+        }
+    }
 }
 
 /// An output converted to its stored unit and grid, with the position it came from.
@@ -155,16 +165,6 @@ struct StagedOutput {
     index: usize,
     at: usize,
     value: StateValue,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct OutputTarget {
-    index: usize,
-    /// Source and target grid of a write transform.
-    transform: Option<(GridType, GridType)>,
-    timeseries_type: TimeseriesType,
-    /// Factor from the producer's unit to the stored unit.
-    unit_factor: FloatValue,
 }
 
 /// `value` multiplied by `factor` in every region.
@@ -339,7 +339,7 @@ impl Model {
             labels: BTreeMap::new(),
             component_states: BTreeMap::new(),
             step_plan: StepPlan::default(),
-            plan: None,
+            buffers: None,
         }
     }
 
@@ -407,11 +407,6 @@ impl Model {
     /// resolutions than the schema declares.
     pub fn write_transforms(&self) -> &HashMap<String, RequiredTransformation> {
         &self.write_transforms
-    }
-
-    #[cfg(test)]
-    pub(crate) fn write_transforms_mut(&mut self) -> &mut HashMap<String, RequiredTransformation> {
-        &mut self.write_transforms
     }
 
     /// Get unit conversions.
@@ -482,76 +477,6 @@ impl Model {
         self.time_axis.at_bounds(self.time_index).unwrap()
     }
 
-    /// Read context of a component, from the model's transforms, conversions and sources.
-    fn component_plan(&self, node: NodeIndex) -> ComponentPlan {
-        let component = &self.components[node];
-        let name = self.component_label(node);
-        let input_names = component.input_names();
-        let indices = input_names
-            .iter()
-            .map(|input| {
-                self.collection
-                    .position(input)
-                    .unwrap_or_else(|| panic!("No timeseries with variable='{}'", input))
-            })
-            .collect();
-        let mut order: Vec<u32> = (0..input_names.len() as u32).collect();
-        order.sort_by(|&a, &b| lookup_order(&input_names[a as usize], &input_names[b as usize]));
-        let transforms = input_names
-            .iter()
-            .map(|input| self.read_transform(input, &name))
-            .collect();
-        let outputs = OutputBuffer::new(component.output_names());
-        let declared_units: HashMap<String, String> = component
-            .outputs()
-            .into_iter()
-            .map(|def| (def.name, def.unit))
-            .collect();
-        let targets = outputs
-            .names()
-            .iter()
-            .map(|output| {
-                self.output_target(output, declared_units.get(output).map(String::as_str))
-            })
-            .collect();
-        ComponentPlan {
-            node,
-            name,
-            inputs: InputPlan {
-                indices,
-                order,
-                transforms,
-            },
-            outputs,
-            targets,
-            staged: Vec::new(),
-        }
-    }
-
-    /// How `component` reads `input`, or `None` for a plain scalar read.
-    fn read_transform(&self, input: &str, component: &str) -> Option<ReadTransformInfo> {
-        let key = (input.to_string(), component.to_string());
-        let unit_factor = self.unit_conversions.get(&key).copied().unwrap_or(1.0);
-        let variable_source = self.variable_sources.get(&key).copied().unwrap_or_default();
-        let timeseries_type = self.timeseries_type(input).unwrap_or(TimeseriesType::Point);
-        let source_grid = self
-            .read_transforms
-            .get(input)
-            .map_or_else(|| self.stored_grid(input), |t| t.source_grid);
-        // A grid input always carries the model's weights, so a global read of it uses them.
-        let plain = source_grid == GridType::Scalar
-            && (unit_factor - 1.0).abs() <= f64::EPSILON
-            && variable_source == VariableSource::Prescribed
-            && timeseries_type == TimeseriesType::Point;
-        (!plain).then(|| {
-            let weights = self.grid_weights.get(&source_grid).cloned();
-            ReadTransformInfo::new(source_grid, weights)
-                .with_conversion_factor(unit_factor)
-                .with_source(variable_source)
-                .with_timeseries_type(timeseries_type)
-        })
-    }
-
     /// Grid of the stored series `name`, or `Scalar` if there is none.
     fn stored_grid(&self, name: &str) -> GridType {
         self.collection
@@ -559,61 +484,37 @@ impl Model {
             .map_or(GridType::Scalar, |item| item.data.grid())
     }
 
-    /// Where `component`'s output `name` is stored and how it is transformed on the way.
-    fn output_target(&self, name: &str, declared_unit: Option<&str>) -> Option<OutputTarget> {
-        let index = self.collection.position(name)?;
-        let unit_factor = declared_unit
-            .and_then(|unit| self.write_factor(name, unit))
-            .unwrap_or(1.0);
-        let transform = self
-            .write_transforms
-            .get(name)
-            .map(|t| (t.source_grid, t.target_grid));
-        let timeseries_type = self.timeseries_type(name).unwrap_or(TimeseriesType::Point);
-        Some(OutputTarget {
-            index,
-            transform,
-            timeseries_type,
-            unit_factor,
-        })
-    }
-
-    /// The factor taking `name` from `declared_unit` into the unit it is stored in,
-    /// or `None` when the units match.
-    pub(crate) fn write_factor(&self, name: &str, declared_unit: &str) -> Option<FloatValue> {
-        let stored_unit = self.collection.get_data(name)?.unit();
-        crate::units::factor(name, declared_unit, stored_unit)
-            .unwrap_or_else(|e| panic!("the build checks every write converts: {e}"))
-    }
-
     /// Solve a single component for the current step.
     ///
     /// The updated state from the component is then pushed into the model's timeseries collection
     /// to be later used by other components.
     /// A point output is stored at the step's end and an average at its start.
-    fn step_model_component(&mut self, plan: &mut ComponentPlan) -> RSCMResult<()> {
-        let component = &self.components[plan.node];
-        let component_name = &plan.name;
-        let input_state =
-            InputState::planned(self.collection.items(), &plan.inputs, self.current_time())
-                .with_time_index(self.time_index);
+    fn step_model_component(&mut self, step: &Step, buffers: &mut StepBuffers) -> RSCMResult<()> {
+        let component = &self.components[step.node];
+        let component_name = &step.label;
+        let input_state = InputState::planned(
+            self.collection.items(),
+            &buffers.inputs,
+            self.current_time(),
+        )
+        .with_time_index(self.time_index);
 
         let (start, end) = self.current_time_bounds();
 
         // Get component state - must exist since we initialise all states in build()
         let internal_state = self
             .component_states
-            .get_mut(&plan.node)
+            .get_mut(&step.node)
             .expect("Component state not initialised, a bug in Model::build()");
 
-        plan.outputs.clear();
+        buffers.outputs.clear();
         component
             .solve_into(
                 start,
                 end,
                 &input_state,
                 internal_state.as_mut(),
-                &mut plan.outputs.writer(),
+                &mut buffers.outputs.writer(),
             )
             .map_err(|err| match err {
                 RSCMError::Interrupt(_) => err,
@@ -622,7 +523,7 @@ impl Model {
                 )),
             })?;
 
-        let undeclared = plan.outputs.take_undeclared();
+        let undeclared = buffers.outputs.take_undeclared();
         if !undeclared.is_empty() {
             let names: Vec<&str> = undeclared.iter().map(|(name, _)| name.as_str()).collect();
             return Err(RSCMError::Error(format!(
@@ -631,22 +532,15 @@ impl Model {
             )));
         }
 
-        plan.staged.clear();
-        for position in 0..plan.targets.len() {
-            if let Some(value) = plan.outputs.take(position) {
-                let key = &plan.outputs.names()[position];
-                let staged = self.stage_output(
-                    component_name,
-                    position,
-                    key,
-                    plan.targets[position],
-                    value,
-                )?;
-                plan.staged.push(staged);
+        buffers.staged.clear();
+        for (position, write) in step.writes.iter().enumerate() {
+            if let Some(value) = buffers.outputs.take(position) {
+                let staged = self.stage_output(component_name, position, write, value)?;
+                buffers.staged.push(staged);
             }
         }
-        for staged in plan.staged.drain(..) {
-            let key = &plan.outputs.names()[staged.position];
+        for staged in buffers.staged.drain(..) {
+            let key = &step.writes[staged.position].definition.name;
             let data = self.collection.data_mut(staged.index);
             match &staged.value {
                 StateValue::Scalar(v) => data.set_scalar(key, staged.at, *v),
@@ -676,73 +570,47 @@ impl Model {
         ))
     }
 
-    /// A component's output `key` converted to the unit and grid it is stored in.
+    /// A component's output converted to the unit and grid it is stored in.
     fn stage_output(
         &self,
         component_name: &str,
         position: usize,
-        key: &str,
-        target: Option<OutputTarget>,
+        write: &Write,
         value: StateValue,
     ) -> RSCMResult<StagedOutput> {
-        let (start, end) = self.current_time_bounds();
-        let target = target.ok_or_else(|| {
-            RSCMError::Error(format!(
-                "{component_name} output {key} has no stored timeseries during {start}..{end}"
-            ))
-        })?;
-        let expected_grid = target.transform.map_or_else(
-            || self.collection.items()[target.index].data.grid(),
-            |(source_grid, _)| source_grid,
-        );
+        let key = &write.definition.name;
+        let expected_grid = write.grid.map_or(write.stored_grid, |g| g.from);
         if value.grid() != expected_grid {
             return Err(self.grid_mismatch(component_name, key, expected_grid, value.grid()));
         }
-        let value = if (target.unit_factor - 1.0).abs() > FloatValue::EPSILON {
-            scale_state_value(&value, target.unit_factor)
-        } else {
-            value
+        let value = match &write.unit {
+            Some(unit) if (unit.factor - 1.0).abs() > FloatValue::EPSILON => {
+                scale_state_value(&value, unit.factor)
+            }
+            _ => value,
         };
-        let value = match target.transform {
-            Some((source_grid, target_grid)) => aggregate_state_value(
-                &value,
-                source_grid,
-                target_grid,
-                self.grid_weights.get(&source_grid),
-            )
-            .map_err(|err| {
-                RSCMError::Error(format!(
-                    "{component_name} could not aggregate {key} during {start}..{end}: {err}"
-                ))
-            })?,
+        let value = match write.grid {
+            Some(grid) => aggregate_state_value(&value, grid.from, grid.to, write.weights.as_ref())
+                .map_err(|err| {
+                    let (start, end) = self.current_time_bounds();
+                    RSCMError::Error(format!(
+                        "{component_name} could not aggregate {key} during {start}..{end}: {err}"
+                    ))
+                })?,
             None => value,
         };
-        let stored_grid = self.collection.items()[target.index].data.grid();
-        if value.grid() != stored_grid {
-            return Err(self.grid_mismatch(component_name, key, stored_grid, value.grid()));
+        if value.grid() != write.stored_grid {
+            return Err(self.grid_mismatch(component_name, key, write.stored_grid, value.grid()));
         }
-        let at = match target.timeseries_type {
+        let at = match write.timeseries_type {
             TimeseriesType::Point => self.time_index + 1,
             TimeseriesType::Average => self.time_index,
         };
         Ok(StagedOutput {
             position,
-            index: target.index,
+            index: write.slot,
             at,
             value,
-        })
-    }
-
-    /// The order components run in within a step, including the graph's root node.
-    ///
-    /// Every producer runs before its consumers, including when branches
-    /// of different lengths feed an aggregate. Self-edges describe a component's
-    /// own state and do not constrain the order within a step.
-    pub(crate) fn execution_order(&self) -> RSCMResult<Vec<NodeIndex>> {
-        execution_order(&self.components).map_err(|node| RSCMError::FeedbackLoop {
-            components: vec![self.component_label(node)],
-            variables: vec![],
-            suggestions: vec![],
         })
     }
 
@@ -816,83 +684,23 @@ impl Model {
         .map(std::borrow::Cow::Owned)
     }
 
-    /// Panic unless the step plan holds what the runtime derives from the coupling maps.
-    #[cfg(test)]
-    pub(crate) fn check_plan_matches_maps(&self) {
-        let order: Vec<NodeIndex> = self
-            .execution_order()
-            .unwrap()
-            .into_iter()
-            .filter(|&node| node != self.initial_node)
-            .collect();
-        let planned: Vec<NodeIndex> = self.step_plan.steps.iter().map(|s| s.node).collect();
-        assert_eq!(planned, order);
-        let mut unplanned = Model::with_variable_sources(
-            self.components.clone(),
-            self.initial_node,
-            self.collection.clone(),
-            self.time_axis.clone(),
-            self.grid_weights.clone(),
-            self.read_transforms.clone(),
-            self.write_transforms.clone(),
-            self.unit_conversions.clone(),
-            self.variable_sources.clone(),
-        );
-        unplanned.timeseries_types = self.timeseries_types.clone();
-        unplanned.labels = self.labels.clone();
-        assert_eq!(*unplanned.resolved_plan().unwrap(), self.step_plan);
-        for step in &self.step_plan.steps {
-            let runtime = self.component_plan(step.node);
-            assert_eq!(step.label, runtime.name);
-            let slots: Vec<usize> = step.reads.iter().map(|r| r.slot).collect();
-            assert_eq!(slots, runtime.inputs.indices, "{}", step.label);
-            assert_eq!(step.lookup_order, runtime.inputs.order, "{}", step.label);
-            let transforms: Vec<_> = step.reads.iter().map(|r| r.transform_info()).collect();
-            assert_eq!(
-                format!("{transforms:?}"),
-                format!("{:?}", runtime.inputs.transforms),
-                "{}",
-                step.label
-            );
-            let names: Vec<&String> = step.writes.iter().map(|w| &w.definition.name).collect();
-            assert_eq!(names, runtime.outputs.names().iter().collect::<Vec<_>>());
-            for (write, target) in step.writes.iter().zip(&runtime.targets) {
-                let target = target.expect("every output is stored");
-                assert_eq!(write.slot, target.index);
-                assert_eq!(write.timeseries_type, target.timeseries_type);
-                assert_eq!(write.grid.map(|g| (g.from, g.to)), target.transform);
-                let factor = write.unit.as_ref().map_or(1.0, |u| u.factor);
-                assert_eq!(factor.to_bits(), target.unit_factor.to_bits());
-                let weights = target
-                    .transform
-                    .and_then(|(from, _)| self.grid_weights.get(&from).cloned());
-                assert_eq!(write.weights, weights);
-            }
-        }
-    }
-
-    /// Nodes of the plan the runtime built on its first step.
-    #[cfg(test)]
-    pub(crate) fn planned_order(&self) -> Option<Vec<NodeIndex>> {
-        self.plan
-            .as_ref()
-            .map(|plan| plan.iter().map(|component| component.node).collect())
-    }
-
     /// Step the model forward a step by solving each component for the current step.
     fn step_model(&mut self) -> RSCMResult<()> {
-        let mut plan = match self.plan.take() {
-            Some(plan) => plan,
-            None => self
-                .execution_order()?
-                .into_iter()
-                .map(|nx| self.component_plan(nx))
-                .collect(),
-        };
+        if self.step_plan.steps.is_empty() {
+            self.step_plan = self.resolved_plan()?.into_owned();
+        }
+        let plan = std::mem::take(&mut self.step_plan);
+        let mut buffers = self
+            .buffers
+            .take()
+            .unwrap_or_else(|| plan.steps.iter().map(StepBuffers::new).collect());
         let result = plan
-            .iter_mut()
-            .try_for_each(|component| self.step_model_component(component));
-        self.plan = Some(plan);
+            .steps
+            .iter()
+            .zip(&mut buffers)
+            .try_for_each(|(step, buffers)| self.step_model_component(step, buffers));
+        self.step_plan = plan;
+        self.buffers = Some(buffers);
         result
     }
 

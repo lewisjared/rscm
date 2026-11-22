@@ -990,8 +990,6 @@ impl ModelBuilder {
         model.timeseries_types = timeseries_types;
         model.labels = node_labels;
         model.step_plan = step_plan;
-        #[cfg(test)]
-        model.check_plan_matches_maps();
 
         // Initialise component states for each node
         for node_idx in model.components.node_indices() {
