@@ -1,4 +1,4 @@
-use crate::errors::RSCMResult;
+use crate::errors::{RSCMError, RSCMResult};
 pub use crate::state::{
     FourBoxSlice, GridTimeseriesWindow, HemisphericSlice, HemisphericWindow, InputState,
     OutputBuffer, OutputState, OutputWriter, ScalarWindow, TimeseriesWindow, VariableSource,
@@ -513,6 +513,34 @@ pub trait Component: Debug + Send + Sync {
     /// Override for components that need internal state.
     fn create_initial_state(&self) -> Box<dyn ComponentState> {
         Box::new(())
+    }
+
+    /// Fail unless `state` fits this component's parameters, such as one entry per species in order.
+    ///
+    /// Restoring and branching call this on each saved state. The default accepts any state.
+    fn check_state(&self, state: &dyn ComponentState) -> RSCMResult<()> {
+        let _ = state;
+        Ok(())
+    }
+}
+
+/// `state` as a `T`, or an error naming the type it should have been.
+pub fn downcast_state<T: ComponentState>(state: &dyn ComponentState) -> RSCMResult<&T> {
+    state.as_any().downcast_ref::<T>().ok_or_else(|| {
+        let name = std::any::type_name::<T>();
+        let name = name.rsplit("::").next().unwrap_or(name);
+        RSCMError::Error(format!("the state is not a {name}"))
+    })
+}
+
+/// Fail unless `actual` is `expected`, naming what was counted.
+pub fn check_state_len(what: &str, expected: usize, actual: usize) -> RSCMResult<()> {
+    if expected == actual {
+        Ok(())
+    } else {
+        Err(RSCMError::Error(format!(
+            "the parameters give {expected} {what} but the state has {actual}"
+        )))
     }
 }
 

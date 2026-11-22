@@ -29,8 +29,8 @@
 use crate::bounds::Bounded;
 use crate::parameters::{PermafrostParameters, PermafrostSoil};
 use rscm_core::component::{
-    Component, ComponentState, GridType, InputState, OutputBuffer, OutputState, OutputWriter,
-    VariableDefinition, VariableRole,
+    check_state_len, downcast_state, Component, ComponentState, GridType, InputState, OutputBuffer,
+    OutputState, OutputWriter, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -466,6 +466,13 @@ impl Component for Permafrost {
         Box::new(self.initial_state())
     }
 
+    fn check_state(&self, state: &dyn ComponentState) -> RSCMResult<()> {
+        let state = downcast_state::<PermafrostState>(state)?;
+        let n_bands = self.parameters.n_bands;
+        check_state_len("mineral soil bands", n_bands, state.mineral_soil.len())?;
+        check_state_len("peat bands", n_bands, state.peat.len())
+    }
+
     fn solve_with_state(
         &self,
         t_current: Time,
@@ -497,6 +504,21 @@ impl Component for Permafrost {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn check_state_rejects_another_band_count() {
+        let component = Permafrost::new();
+        assert!(component.check_state(&component.initial_state()).is_ok());
+        let fewer = Permafrost::from_parameters(PermafrostParameters {
+            n_bands: 10,
+            ..PermafrostParameters::default()
+        });
+        let err = fewer.check_state(&component.initial_state()).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "the parameters give 10 mineral soil bands but the state has 50"
+        );
+    }
 
     fn total_carbon(state: &PermafrostState) -> FloatValue {
         state

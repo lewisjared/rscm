@@ -32,8 +32,8 @@ use crate::parameters::{
     ClimateUDEBParameters, SeaLevelRiseParameters, SurfaceMassBalance, ThermalExpansion,
 };
 use rscm_core::component::{
-    Component, ComponentState, GridType, InputState, OutputBuffer, OutputState, OutputWriter,
-    VariableDefinition, VariableRole,
+    check_state_len, downcast_state, Component, ComponentState, GridType, InputState, OutputBuffer,
+    OutputState, OutputWriter, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::{ScalarWindow, StateValue};
@@ -343,6 +343,12 @@ impl Component for SeaLevelRise {
         Box::new(self.initial_state())
     }
 
+    fn check_state(&self, state: &dyn ComponentState) -> RSCMResult<()> {
+        let state = downcast_state::<SeaLevelRiseState>(state)?;
+        let regions = self.parameters.antarctic_discharge.regions.len();
+        check_state_len("Antarctic regions", regions, state.antarctic_regions.len())
+    }
+
     fn solve_with_state(
         &self,
         t_current: Time,
@@ -374,6 +380,19 @@ impl Component for SeaLevelRise {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn check_state_rejects_another_region_count() {
+        let component = SeaLevelRise::new();
+        let state = component.initial_state();
+        assert!(component.check_state(&state).is_ok());
+        let mut parameters = SeaLevelRiseParameters::default();
+        parameters.antarctic_discharge.regions.pop();
+        let fewer = SeaLevelRise::from_parameters(parameters);
+        let err = fewer.check_state(&state).unwrap_err().to_string();
+        assert!(err.starts_with("the parameters give"), "{err}");
+        assert!(err.contains("Antarctic regions"), "{err}");
+    }
 
     #[test]
     fn test_thermal_expansion_follows_warming() {

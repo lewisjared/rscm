@@ -32,8 +32,8 @@
 use crate::constants::{driver_definitions, get, one, surface_temperature};
 use crate::driver::Driver;
 use rscm_core::component::{
-    Component, ComponentState, InputState, OutputBuffer, OutputState, OutputWriter,
-    VariableDefinition,
+    check_state_len, downcast_state, Component, ComponentState, InputState, OutputBuffer,
+    OutputState, OutputWriter, VariableDefinition,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::timeseries::{FloatValue, Time};
@@ -180,6 +180,12 @@ impl Component for LinearForcing {
         Box::new(self.initial_state())
     }
 
+    fn check_state(&self, state: &dyn ComponentState) -> RSCMResult<()> {
+        let state = downcast_state::<LinearForcingState>(state)?;
+        let drivers = self.parameters.drivers.len();
+        check_state_len("drivers", drivers, state.emissions_sum.len())
+    }
+
     fn solve_with_state(
         &self,
         t_current: Time,
@@ -232,6 +238,19 @@ mod tests {
             surface_temperature: surface_temperature(),
             skip_nan_terms,
         })
+    }
+
+    #[test]
+    fn check_state_rejects_another_driver_count() {
+        let component = linear(false);
+        assert!(component.check_state(&component.initial_state()).is_ok());
+        let state = LinearForcingState {
+            emissions_sum: vec![0.0],
+        };
+        let err = component.check_state(&state).unwrap_err().to_string();
+        assert_eq!(err, "the parameters give 2 drivers but the state has 1");
+        let err = component.check_state(&()).unwrap_err().to_string();
+        assert_eq!(err, "the state is not a LinearForcingState");
     }
 
     #[test]

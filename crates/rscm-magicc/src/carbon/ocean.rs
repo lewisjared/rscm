@@ -47,10 +47,10 @@ use crate::reference::{
     prescribed_definition, require_annual,
 };
 use rscm_core::component::{
-    Component, ComponentState, GridType, InputState, OutputBuffer, OutputState, OutputWriter,
-    VariableDefinition, VariableRole,
+    downcast_state, Component, ComponentState, GridType, InputState, OutputBuffer, OutputState,
+    OutputWriter, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -65,6 +65,9 @@ use serde::{Deserialize, Serialize};
 pub struct OceanCarbonState {
     /// Air-sea flux of each substep for the IRF convolution (ppm/yr).
     pub flux_history: VecDeque<FloatValue>,
+
+    /// Substeps per year of the flux history.
+    pub steps_per_year: usize,
 
     /// First year of the run, which times the IRF lags as MAGICC7 does.
     pub start_year: Option<FloatValue>,
@@ -236,6 +239,7 @@ impl OceanCarbon {
         let mut pco2_previous = state.pco2_previous.unwrap_or(pco2_start);
         let sources_per_step = other_sources * dt / steps / p.gtc_per_ppm;
         let limit = p.flux_change_limit;
+        state.steps_per_year = p.steps_per_year;
 
         for step in 1..=p.steps_per_year {
             let mut flux =
@@ -380,7 +384,28 @@ impl Component for OceanCarbon {
     }
 
     fn create_initial_state(&self) -> Box<dyn ComponentState> {
-        Box::new(OceanCarbonState::default())
+        Box::new(OceanCarbonState {
+            steps_per_year: self.parameters.steps_per_year,
+            ..OceanCarbonState::default()
+        })
+    }
+
+    fn check_state(&self, state: &dyn ComponentState) -> RSCMResult<()> {
+        let state = downcast_state::<OceanCarbonState>(state)?;
+        let p = &self.parameters;
+        let len = state.flux_history.len();
+        if state.steps_per_year != p.steps_per_year {
+            return Err(RSCMError::Error(format!(
+                "the parameters give {} substeps per year but the flux history has {}",
+                p.steps_per_year, state.steps_per_year
+            )));
+        }
+        if let Some(max) = p.maximum_history_months.filter(|&max| len > max) {
+            return Err(RSCMError::Error(format!(
+                "the parameters keep at most {max} months of flux history but the state has {len}"
+            )));
+        }
+        Ok(())
     }
 
     fn solve_with_state(
@@ -419,6 +444,32 @@ mod tests {
 
     fn default_component() -> OceanCarbon {
         OceanCarbon::from_parameters(OceanCarbonParameters::default())
+    }
+
+    #[test]
+    fn check_state_rejects_another_substep_rate_or_longer_history() {
+        let component = default_component();
+        let steps = component.parameters.steps_per_year;
+        let state = |rate: usize, months: usize| OceanCarbonState {
+            steps_per_year: rate,
+            flux_history: std::iter::repeat_n(1.0, months).collect(),
+            ..OceanCarbonState::default()
+        };
+        assert!(component.check_state(&state(steps, 2 * steps)).is_ok());
+        let err = component.check_state(&state(steps / 2, steps)).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "the parameters give {steps} substeps per year but the flux history has {}",
+                steps / 2
+            )
+        );
+        let capped = OceanCarbon::from_parameters(OceanCarbonParameters {
+            maximum_history_months: Some(steps),
+            ..OceanCarbonParameters::default()
+        });
+        let err = capped.check_state(&state(steps, 2 * steps)).unwrap_err();
+        assert!(err.to_string().contains("at most"), "{err}");
     }
 
     /// Run `years` annual steps with constant sources, returning the final result
