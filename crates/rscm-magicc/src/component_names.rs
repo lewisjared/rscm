@@ -155,28 +155,6 @@ fn climate_udeb_names() {
 }
 
 #[test]
-fn aerosol_direct_names() {
-    declares(
-        crate::forcing::AerosolDirect::generated_definitions(),
-        &[
-            EMISSIONS_BC,
-            EMISSIONS_NOX,
-            EMISSIONS_OC,
-            EMISSIONS_SOX,
-            ERF_AEROSOLS_DIRECT_EFFECT,
-        ],
-    );
-}
-
-#[test]
-fn aerosol_indirect_names() {
-    declares(
-        crate::forcing::AerosolIndirect::generated_definitions(),
-        &[EMISSIONS_OC, EMISSIONS_SOX, ERF_AEROSOLS_INDIRECT_EFFECT],
-    );
-}
-
-#[test]
 fn ghg_forcing_names() {
     declares(
         crate::forcing::GHGForcing::generated_definitions(),

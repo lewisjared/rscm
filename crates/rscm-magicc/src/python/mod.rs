@@ -17,13 +17,9 @@ use rscm_core::timeseries::FloatValue;
 use crate::carbon::{CO2Budget, OceanCarbon, Permafrost, TerrestrialCarbon};
 use crate::chemistry::{CH4Chemistry, CH4Oxidation, HalocarbonChemistry, N2OChemistry};
 use crate::climate::{ClimateUDEB, SeaLevelRise};
-use crate::forcing::{
-    AerosolDirect, AerosolIndirect, Drivers, ForcingAggregation, GHGForcing, NitrateCloudForcing,
-    OzoneForcing,
-};
+use crate::forcing::{Drivers, ForcingAggregation, GHGForcing, NitrateCloudForcing, OzoneForcing};
 use crate::parameters::{
-    AerosolDirectParameters, AerosolIndirectParameters, CH4ChemistryParameters,
-    CH4OxidationParameters, CO2BudgetParameters, ClimateUDEBParameters,
+    CH4ChemistryParameters, CH4OxidationParameters, CO2BudgetParameters, ClimateUDEBParameters,
     ForcingAggregationParameters, GHGForcingParameters, HalocarbonChemistryParameters,
     N2OChemistryParameters, NitrateCloudForcingParameters, OceanCarbonParameters,
     OzoneForcingParameters, PermafrostParameters, SeaLevelRiseParameters,
@@ -260,12 +256,6 @@ impl GHGForcingBuilder {
     }
 }
 create_component_builder!(OzoneForcingBuilder, OzoneForcing, OzoneForcingParameters);
-create_component_builder!(AerosolDirectBuilder, AerosolDirect, AerosolDirectParameters);
-create_component_builder!(
-    AerosolIndirectBuilder,
-    AerosolIndirect,
-    AerosolIndirectParameters
-);
 
 /// Builder for `ForcingAggregation`, whose parameters are validated on build.
 #[pyclass]
@@ -597,8 +587,6 @@ pub fn magicc(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Forcing
     m.add_class::<GHGForcingBuilder>()?;
     m.add_class::<OzoneForcingBuilder>()?;
-    m.add_class::<AerosolDirectBuilder>()?;
-    m.add_class::<AerosolIndirectBuilder>()?;
     m.add_class::<NitrateCloudForcingBuilder>()?;
     m.add_class::<ForcingAggregationBuilder>()?;
     Ok(())

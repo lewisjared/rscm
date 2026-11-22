@@ -14,3 +14,6 @@ so the AR6 ensemble's aerosol parameters take effect when changed on a built con
   `Optical Thickness|...` inputs, which `full.nitrate_cloud_inputs` provides.
   `full.prescribed_forcing` no longer returns them.
   `rscm.magicc.prescribed.nitrate`, `nitrate_pattern` and `cloud_albedo` were removed.
+- Removes `AerosolDirectBuilder` and `AerosolIndirectBuilder` and their parameters.
+  These simplified stand-ins were not part of the MAGICC models,
+  and `NitrateCloudForcing` replaces the cloud albedo one.

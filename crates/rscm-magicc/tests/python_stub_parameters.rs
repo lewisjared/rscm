@@ -128,14 +128,6 @@ fn magicc_stub_typeddicts_match_rust_parameters() {
 
     let mut cases: Vec<(&str, Value)> = vec![
         (
-            "AerosolDirectParameters",
-            to_json(&AerosolDirectParameters::default()),
-        ),
-        (
-            "AerosolIndirectParameters",
-            to_json(&AerosolIndirectParameters::default()),
-        ),
-        (
             "CH4ChemistryParameters",
             to_json(&CH4ChemistryParameters::default()),
         ),

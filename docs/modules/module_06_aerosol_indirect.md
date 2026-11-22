@@ -182,9 +182,6 @@ RSCM reproduces these unless the entry says otherwise.
 - **Not in RSCM**: the cloud cover effect (zero by default), the forcing cap `CLOUD_APPLY_LIMIT_MAX`,
   `RF_AER_CONSTANTAFTERYR`, surface forcing and the sector mode.
   In the sector mode MAGICC7 runs the calculation twice and keeps the normalisation of the first run.
-- **Rust component**: `AerosolIndirect` (`crates/rscm-magicc/src/forcing/aerosol_indirect.rs`)
-  is a simplified, global version with no MAGICC7 parity test, and the MAGICC models do not use it.
-  It uses $\ln(1 + B/B_0)$ of SOx and OC emissions, with no regional pattern or optical thickness.
 
 ## References
 

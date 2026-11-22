@@ -4,7 +4,6 @@
 //! Each parameter struct provides sensible defaults matching MAGICC7's
 //! default configuration.
 
-mod aerosol;
 mod ch4_chemistry;
 mod ch4_oxidation;
 mod climate_udeb;
@@ -21,7 +20,6 @@ mod permafrost;
 mod sea_level;
 mod terrestrial_carbon;
 
-pub use aerosol::{AerosolDirectParameters, AerosolIndirectParameters};
 pub use ch4_chemistry::{ch4_non_oh_lifetime, ch4_oh_lifetime, CH4ChemistryParameters};
 pub use ch4_oxidation::CH4OxidationParameters;
 pub use climate_udeb::{

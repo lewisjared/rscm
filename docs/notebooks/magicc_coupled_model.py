@@ -152,7 +152,6 @@ def reference_run(name):
 # `rscm.magicc.prescribed` does the same, and the results enter the model as prescribed inputs.
 # `NitrateCloudForcing` calculates nitrate and cloud albedo forcing in the run instead,
 # from prescribed emissions and optical thicknesses.
-# `AerosolDirectBuilder` and `AerosolIndirectBuilder` are simpler stand-ins and are not part of this chain.
 #
 # The [module status table](../../modules/#rscm-implementation-status)
 # records the parity evidence for each module.
