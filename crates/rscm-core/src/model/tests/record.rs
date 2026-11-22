@@ -1,7 +1,8 @@
 //! Records: checkpoints, restore and branching.
 
 use crate::component::{
-    Component, ComponentState, InputState, OutputState, VariableDefinition, VariableRole,
+    downcast_state, Component, ComponentState, InputState, OutputState, VariableDefinition,
+    VariableRole,
 };
 use crate::errors::RSCMResult;
 use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
@@ -46,6 +47,10 @@ impl Component for Accumulate {
 
     fn create_initial_state(&self) -> Box<dyn ComponentState> {
         Box::new(Calls(0))
+    }
+
+    fn check_state(&self, state: &dyn ComponentState) -> RSCMResult<()> {
+        downcast_state::<Calls>(state).map(|_| ())
     }
 
     fn solve(&self, _: Time, _: Time, _: &InputState) -> RSCMResult<OutputState> {
@@ -389,4 +394,40 @@ fn a_record_with_another_value_shape_fails_restore_naming_the_variable() {
     let record = Record::from_json(&saved.to_string()).unwrap();
     let err = Model::restore(&record).unwrap_err().to_string();
     assert!(err.contains("'Stock' has values of shape (10, 1)"), "{err}");
+}
+
+#[test]
+fn a_state_its_component_rejects_fails_restore_and_branch_naming_the_label() {
+    let mut model = builder(base_emissions()).build().unwrap();
+    model.step();
+    let mut record = model.checkpoint().unwrap();
+    record
+        .states
+        .insert("Fast".into(), serde_json::json!({"state_type": "unit"}));
+
+    let err = Model::restore(&record).unwrap_err().to_string();
+    assert_eq!(
+        err,
+        "Cannot restore the record: the saved state of 'Fast' does not fit its parameters, \
+         the state is not a Calls"
+    );
+    let err = Model::branch(
+        &record,
+        Branch {
+            parameters: BTreeMap::from([(
+                "Fast".to_string(),
+                Arc::new(Accumulate {
+                    rate: 3.0,
+                    unit: "GtC".into(),
+                }) as Arc<dyn Component>,
+            )]),
+            ..Branch::default()
+        },
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        err.starts_with("Cannot branch from the record: the saved state of 'Fast'"),
+        "{err}"
+    );
 }

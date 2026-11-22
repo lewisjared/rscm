@@ -47,10 +47,10 @@ use crate::reference::{
     prescribed_definition, require_annual,
 };
 use rscm_core::component::{
-    Component, ComponentState, GridType, InputState, OutputBuffer, OutputState, OutputWriter,
-    VariableDefinition, VariableRole,
+    downcast_state, Component, ComponentState, GridType, InputState, OutputBuffer, OutputState,
+    OutputWriter, VariableDefinition, VariableRole,
 };
-use rscm_core::errors::RSCMResult;
+use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::state::{ScalarWindow, StateValue};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentIO;
@@ -383,6 +383,25 @@ impl Component for OceanCarbon {
         Box::new(OceanCarbonState::default())
     }
 
+    fn check_state(&self, state: &dyn ComponentState) -> RSCMResult<()> {
+        let state = downcast_state::<OceanCarbonState>(state)?;
+        let p = &self.parameters;
+        let len = state.flux_history.len();
+        if let Some(max) = p.maximum_history_months.filter(|&max| len > max) {
+            return Err(RSCMError::Error(format!(
+                "the parameters keep at most {max} months of flux history but the state has {len}"
+            )));
+        }
+        let capped = p.maximum_history_months == Some(len);
+        if !capped && len.checked_rem(p.steps_per_year).is_some_and(|r| r != 0) {
+            return Err(RSCMError::Error(format!(
+                "the state has {len} substeps of flux history, not whole years of {} substeps",
+                p.steps_per_year
+            )));
+        }
+        Ok(())
+    }
+
     fn solve_with_state(
         &self,
         t_current: Time,
@@ -419,6 +438,25 @@ mod tests {
 
     fn default_component() -> OceanCarbon {
         OceanCarbon::from_parameters(OceanCarbonParameters::default())
+    }
+
+    #[test]
+    fn check_state_rejects_history_of_another_shape() {
+        let component = default_component();
+        let steps = component.parameters.steps_per_year;
+        let state = |months: usize| OceanCarbonState {
+            flux_history: std::iter::repeat_n(1.0, months).collect(),
+            ..OceanCarbonState::default()
+        };
+        assert!(component.check_state(&state(2 * steps)).is_ok());
+        let err = component.check_state(&state(steps + 1)).unwrap_err();
+        assert!(err.to_string().contains("not whole years"), "{err}");
+        let capped = OceanCarbon::from_parameters(OceanCarbonParameters {
+            maximum_history_months: Some(steps),
+            ..OceanCarbonParameters::default()
+        });
+        let err = capped.check_state(&state(2 * steps)).unwrap_err();
+        assert!(err.to_string().contains("at most"), "{err}");
     }
 
     /// Run `years` annual steps with constant sources, returning the final result

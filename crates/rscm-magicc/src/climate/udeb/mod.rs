@@ -75,8 +75,8 @@ use crate::parameters::{
     SECONDS_PER_YEAR,
 };
 use rscm_core::component::{
-    Component, ComponentState, GridType, InputState, OutputBuffer, OutputState, OutputWriter,
-    TimeseriesType, VariableDefinition, VariableRole,
+    check_state_len, downcast_state, Component, ComponentState, GridType, InputState, OutputBuffer,
+    OutputState, OutputWriter, TimeseriesType, VariableDefinition, VariableRole,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::names::{
@@ -928,6 +928,22 @@ impl Component for ClimateUDEB {
         Box::new(self.initial_state())
     }
 
+    fn check_state(&self, state: &dyn ComponentState) -> RSCMResult<()> {
+        let state = downcast_state::<ClimateUDEBState>(state)?;
+        if !state.initialised {
+            return Ok(());
+        }
+        let n_layers = self.parameters.n_layers;
+        check_state_len("hemispheres", 2, state.ocean_temperatures.len())?;
+        for hemisphere in &state.ocean_temperatures {
+            check_state_len("ocean layers", n_layers, hemisphere.len())?;
+        }
+        for profile in state.initial_ocean_profile.iter().filter(|p| !p.is_empty()) {
+            check_state_len("initial profile layers", n_layers, profile.len())?;
+        }
+        Ok(())
+    }
+
     fn solve_with_state(
         &self,
         t_current: Time,
@@ -969,6 +985,24 @@ mod tests {
 
     fn default_state(component: &ClimateUDEB) -> ClimateUDEBState {
         component.initial_state()
+    }
+
+    #[test]
+    fn check_state_rejects_another_layer_count() {
+        let component = default_component();
+        let state = default_state(&component);
+        assert!(component.check_state(&state).is_ok());
+        let fewer = ClimateUDEB::from_parameters(ClimateUDEBParameters {
+            n_layers: 40,
+            ..ClimateUDEBParameters::default()
+        })
+        .unwrap();
+        let err = fewer.check_state(&state).unwrap_err().to_string();
+        assert_eq!(
+            err,
+            "the parameters give 40 ocean layers but the state has 50"
+        );
+        assert!(fewer.check_state(&ClimateUDEBState::default()).is_ok());
     }
 
     #[test]

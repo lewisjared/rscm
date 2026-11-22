@@ -45,8 +45,8 @@
 use crate::constants::{get, surface_temperature, temperature_unit};
 use crate::driver::Driver;
 use rscm_core::component::{
-    Component, ComponentState, InputState, OutputBuffer, OutputState, OutputWriter, TimeseriesType,
-    VariableDefinition,
+    check_state_len, downcast_state, Component, ComponentState, InputState, OutputBuffer,
+    OutputState, OutputWriter, TimeseriesType, VariableDefinition,
 };
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::timeseries::{FloatValue, Time};
@@ -139,6 +139,9 @@ fn default_maximum_iirf() -> FloatValue {
 /// Box contents and emission totals of one gas.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GasState {
+    /// Concentration variable of the gas, which names it. Empty in records from rscm 0.8.
+    #[serde(default)]
+    pub concentration: String,
     /// Airborne emissions in each box.
     pub boxes: Vec<FloatValue>,
     /// Airborne emissions.
@@ -237,6 +240,7 @@ impl GasCycle {
                 .species
                 .iter()
                 .map(|s| GasState {
+                    concentration: s.concentration.clone(),
                     boxes: vec![0.0; s.partition_fraction.len()],
                     ..GasState::default()
                 })
@@ -421,6 +425,23 @@ impl Component for GasCycle {
         Box::new(self.initial_state())
     }
 
+    fn check_state(&self, state: &dyn ComponentState) -> RSCMResult<()> {
+        let state = downcast_state::<GasCycleState>(state)?;
+        let species = &self.parameters.species;
+        check_state_len("species", species.len(), state.gases.len())?;
+        for (index, (s, gas)) in species.iter().zip(&state.gases).enumerate() {
+            if !gas.concentration.is_empty() && gas.concentration != s.concentration {
+                return Err(RSCMError::Error(format!(
+                    "species {index} is '{}' in the parameters but '{}' in the state",
+                    s.concentration, gas.concentration
+                )));
+            }
+            let what = format!("boxes for '{}'", s.concentration);
+            check_state_len(&what, s.partition_fraction.len(), gas.boxes.len())?;
+        }
+        Ok(())
+    }
+
     fn solve_with_state(
         &self,
         t_current: Time,
@@ -535,5 +556,144 @@ mod tests {
         };
         GasCycle::step_emissions(&species, &mut state, 0.0, 1.0, 1.0);
         assert_relative_eq!(state.boxes[0], 100.0 * (-1.0 / 8.25_f64).exp());
+    }
+
+    mod branch {
+        use super::*;
+        use rscm_core::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
+        use rscm_core::model::{Branch, Model, ModelBuilder};
+        use rscm_core::spatial::ScalarGrid;
+        use rscm_core::timeseries::{TimeAxis, Timeseries};
+        use std::collections::BTreeMap;
+        use std::sync::Arc;
+
+        fn gas(name: &str) -> GasSpecies {
+            GasSpecies {
+                emissions: vec![format!("Emissions|{name}")],
+                inverse_emissions: None,
+                concentration: format!("Atmospheric Concentrations|{name}"),
+                ..ch4()
+            }
+        }
+
+        fn gas_cycle(species: Vec<GasSpecies>) -> Arc<dyn Component> {
+            let parameters = GasCycleParameters {
+                species,
+                maximum_iirf: default_maximum_iirf(),
+                surface_temperature: surface_temperature(),
+            };
+            Arc::new(GasCycle::from_parameters(parameters).unwrap())
+        }
+
+        fn series(values: Vec<FloatValue>, unit: &str) -> Timeseries<FloatValue> {
+            let axis = Arc::new(TimeAxis::from_values(ndarray::Array::range(
+                2000.0, 2010.0, 1.0,
+            )));
+            Timeseries::new(
+                ndarray::Array1::from(values).insert_axis(ndarray::Axis(1)),
+                axis,
+                ScalarGrid,
+                unit.to_string(),
+                InterpolationStrategy::from(PreviousStrategy::new(true)),
+            )
+        }
+
+        /// A record three steps into a run with gases A then B, B emitting ten times as much.
+        fn record() -> rscm_core::model::Record {
+            let mut builder = ModelBuilder::new();
+            builder
+                .with_time_axis(TimeAxis::from_values(ndarray::Array::range(
+                    2000.0, 2010.0, 1.0,
+                )))
+                .with_component_as("Gases", gas_cycle(vec![gas("A"), gas("B")]))
+                .with_prescribed_variable("Emissions|A", series(vec![10.0; 10], "Mt CH4/yr"))
+                .with_prescribed_variable("Emissions|B", series(vec![100.0; 10], "Mt CH4/yr"))
+                .with_prescribed_variable(&surface_temperature(), series(vec![0.5; 10], "K"));
+            let mut model = builder.build().unwrap();
+            for _ in 0..3 {
+                model.step();
+            }
+            model.checkpoint().unwrap()
+        }
+
+        fn branch(species: Vec<GasSpecies>) -> RSCMResult<Model> {
+            Model::branch(
+                &record(),
+                Branch {
+                    parameters: BTreeMap::from([("Gases".to_string(), gas_cycle(species))]),
+                    ..Branch::default()
+                },
+            )
+        }
+
+        #[test]
+        fn reordered_species_fail_naming_the_label_and_both_gases() {
+            let err = branch(vec![gas("B"), gas("A")]).unwrap_err().to_string();
+            assert!(err.contains("saved state of 'Gases'"), "{err}");
+            assert!(
+                err.contains(
+                    "species 0 is 'Atmospheric Concentrations|B' in the parameters \
+                     but 'Atmospheric Concentrations|A' in the state"
+                ),
+                "{err}"
+            );
+        }
+
+        #[test]
+        fn another_species_or_box_count_fails() {
+            let err = branch(vec![gas("A")]).unwrap_err().to_string();
+            assert!(
+                err.contains("the parameters give 1 species but the state has 2"),
+                "{err}"
+            );
+            let three_boxes = GasSpecies {
+                partition_fraction: vec![1.0, 0.0, 0.0],
+                unperturbed_lifetime: vec![8.25; 3],
+                ..gas("B")
+            };
+            let err = branch(vec![gas("A"), three_boxes]).unwrap_err().to_string();
+            assert!(
+                err.contains(
+                    "the parameters give 3 boxes for 'Atmospheric Concentrations|B' \
+                     but the state has 4"
+                ),
+                "{err}"
+            );
+        }
+
+        #[test]
+        fn a_new_lifetime_keeps_the_layout_and_runs() {
+            let shorter = GasSpecies {
+                unperturbed_lifetime: vec![4.0; 4],
+                ..gas("B")
+            };
+            let mut branched = branch(vec![gas("A"), shorter]).unwrap();
+            branched.run();
+            let mut unbranched = Model::restore(&record()).unwrap();
+            unbranched.run();
+            let last = |model: &Model| {
+                let data = model.timeseries().get_data("Atmospheric Concentrations|B");
+                data.unwrap().as_scalar().unwrap().latest_value().unwrap()
+            };
+            assert!(last(&branched) < last(&unbranched));
+        }
+
+        #[test]
+        fn an_intact_record_restores() {
+            let mut model = Model::restore(&record()).unwrap();
+            model.run();
+        }
+
+        #[test]
+        fn a_state_without_names_is_checked_by_length() {
+            let mut record = record();
+            for gas in record.states.get_mut("Gases").unwrap()["gases"]
+                .as_array_mut()
+                .unwrap()
+            {
+                gas.as_object_mut().unwrap().remove("concentration");
+            }
+            assert!(Model::restore(&record).is_ok());
+        }
     }
 }

@@ -3,7 +3,7 @@
 use super::builder::ModelBuilder;
 use super::runtime::Model;
 use super::types::C;
-use crate::component::{ComponentState, TimeseriesType};
+use crate::component::{Component, ComponentState, TimeseriesType};
 use crate::errors::{RSCMError, RSCMResult};
 use crate::timeseries_collection::TimeseriesCollection;
 use serde::{Deserialize, Serialize};
@@ -41,7 +41,9 @@ pub struct Branch {
     pub prescribed: TimeseriesCollection,
     /// Components replacing those of the same label, each of the same type.
     ///
-    /// Each takes over the saved internal state of the one it replaces, so it must use the same state layout.
+    /// Each takes over the saved internal state of the one it replaces,
+    /// so branching fails unless [`Component::check_state`] accepts that state,
+    /// for example when the new parameters reorder or change the number of species, layers or boxes.
     pub parameters: BTreeMap<String, C>,
 }
 
@@ -178,7 +180,9 @@ impl Model {
         }
         builder.with_prescribed_collection(branch.prescribed);
         for (label, component) in branch.parameters {
-            builder.replace_component(&label, component)?;
+            builder.replace_component(&label, component.clone())?;
+            let state = saved_state(record, &label)?;
+            check_state(&label, component.as_ref(), state.as_ref(), "branch from")?;
         }
         Self::rebuild(record, &builder, Load::History)
     }
@@ -311,17 +315,39 @@ impl Model {
         }
         for step in &self.step_plan.steps {
             let label = &step.label;
-            let Some(saved) = record.states.get(label) else {
-                return Err(RSCMError::Error(format!(
-                    "Cannot restore the record: it has no state for '{label}'"
-                )));
-            };
-            let state: Box<dyn ComponentState> =
-                serde_json::from_value(saved.clone()).map_err(|e| {
-                    RSCMError::Error(format!("Could not read the state of {label}: {e}"))
-                })?;
+            let state = saved_state(record, label)?;
+            check_state(
+                label,
+                self.components[step.node].as_ref(),
+                state.as_ref(),
+                "restore",
+            )?;
             self.component_states.insert(step.node, state);
         }
         Ok(())
     }
+}
+
+/// The saved internal state of the component labelled `label`.
+fn saved_state(record: &Record, label: &str) -> RSCMResult<Box<dyn ComponentState>> {
+    let Some(saved) = record.states.get(label) else {
+        return Err(RSCMError::Error(format!(
+            "Cannot restore the record: it has no state for '{label}'"
+        )));
+    };
+    serde_json::from_value(saved.clone())
+        .map_err(|e| RSCMError::Error(format!("Could not read the state of {label}: {e}")))
+}
+
+fn check_state(
+    label: &str,
+    component: &dyn Component,
+    state: &dyn ComponentState,
+    action: &str,
+) -> RSCMResult<()> {
+    component.check_state(state).map_err(|e| {
+        RSCMError::Error(format!(
+            "Cannot {action} the record: the saved state of '{label}' does not fit its parameters, {e}"
+        ))
+    })
 }

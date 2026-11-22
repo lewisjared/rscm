@@ -917,7 +917,8 @@ class Model:
         ------
         ValueError
             If the rebuilt model stores a different set of variables,
-            or any in another unit, grid or timeseries type.
+            or any in another unit, grid or timeseries type,
+            or a saved component state does not fit its component's parameters.
         """
     @staticmethod
     def branch(
@@ -944,13 +945,15 @@ class Model:
         parameters
             Components replacing those with the same label, each of the same type.
             Each takes over the saved internal state of the one it replaces,
-            so it must use the same state layout.
+            so branching fails if the new parameters change that state's layout,
+            such as reordering or changing the number of species, layers or boxes.
 
         Raises
         ------
         ValueError
             If a label is unknown, a component has another type,
-            or the new components change what the model stores.
+            the new components change what the model stores,
+            or a saved state does not fit its new parameters.
         """
 
 @final
