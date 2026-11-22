@@ -10,7 +10,7 @@ A configuration is a plain dict:
   from the forcing at the first time bound.
   CH4Oxidation's burdens default to all CH4 natural at the initial CH4 concentration.
 - ``initial_forcing`` (optional): the forcing of ForcingAggregation agents
-  at the first time bound, keyed by agent variable,
+  at the first time bound, before their scale, keyed by agent variable,
   with four values for a regional agent and one otherwise.
   The four-box F-gas agent otherwise starts from its forcing over the first step,
   as in MAGICC7, and other agents from their prescribed forcing, or zero.
@@ -312,19 +312,26 @@ def _initial_forcing(
     first: Mapping[str, NDArray[np.float64]],
     given: Mapping[str, Sequence[float]],
 ) -> list[list[float]]:
-    """Return the forcing of each agent at the first time bound."""
+    """Return the forcing of each agent variable at the first time bound.
+
+    A given agent's forcing goes to its first variable, and its others are zero.
+    """
     out = []
     for agent in agents:
         variable = agent["variable"]
+        names = agent.get("sum_of") or [variable]
+        regional = agent.get("regional", False)
+        zero = [0.0] * (4 if regional else 1)
         if variable in given:
             out.append([float(v) for v in given[variable]])
+            out.extend(zero for _ in names[1:])
             continue
-        regional = agent.get("regional", False)
-        total = np.zeros(4 if regional else 1)
-        for name in agent.get("sum_of") or [variable]:
-            if name in first:
-                total = total + (first[name] if regional else _global(first[name]))
-        out.append(total.tolist())
+        for name in names:
+            if name not in first:
+                out.append(zero)
+                continue
+            value = first[name] if regional else _global(first[name])
+            out.append(np.atleast_1d(np.asarray(value, dtype=np.float64)).tolist())
     return out
 
 
@@ -436,7 +443,9 @@ def setup(  # noqa: PLR0913
         )
     aggregation = specs["ForcingAggregation"]
     total, boxes = aggregation.configure().aggregate(
-        _initial_forcing(aggregation.parameters["agents"], first, given)
+        _initial_forcing(aggregation.parameters["agents"], first, given),
+        {key: values for key, (values, _) in prescribed.items()},
+        list(time),
     )
     sea_level = {}
     if "SeaLevelRise" in components:

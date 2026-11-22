@@ -143,52 +143,25 @@ def _scale(target: float | None, factor: float | None, reference: float) -> floa
     return float(target / reference)
 
 
-def _harmonise(
-    boxes: NDArray[np.float64],
-    years: NDArray[np.float64],
-    year: float,
-    target: float | None,
-    factor: float | None = None,
-) -> float:
-    """Factor that sets the global forcing change since the first year to ``target``.
-
-    A given ``factor`` is returned as it is.
-    """
-    if factor is not None:
-        return float(factor)
-    i = _switch_index(years, year)
-    return _scale(target, None, float(area_mean(boxes[i]) - area_mean(boxes[0])))
-
-
-def direct_aerosol(  # noqa: PLR0913
+def direct_aerosol(
     years: ArrayLike,
     industrial: AerosolHistory,
     biomass: AerosolHistory,
     industrial_emissions: ArrayLike,
     biomass_emissions: ArrayLike,
-    *,
-    harmonisation_target: float | None = None,
-    harmonisation_reference_year: float = 2019,
-    factor: float | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Industrial and biomass direct forcing of SOx, BC or OC.
+    """Unscaled industrial and biomass direct forcing of SOx, BC or OC.
 
-    Industrial forcing scales with emissions above the first year's after the
-    file ends, and is harmonised to ``harmonisation_target`` W/m²
-    in ``harmonisation_reference_year`` (`RF_*I_DIR_APPLY=1`),
-    or scaled by ``factor`` (`RF_*I_DIR_APPLY=2`).
-    Biomass forcing (`RF_*B_DIR_APPLY=3`) uses the industrial factor.
+    Industrial forcing scales with emissions above the first year's after the file ends.
     MAGICC7 v7.5.3 extends each biomass box by half the change in midyear
     emissions above the first year's, which is reproduced here.
     The change is negated where the box's final file value and midyear
     emissions differ in sign.
+    `ForcingAggregation` scales both by the industrial agent's scale.
     """
     y = np.asarray(years, dtype=np.float64)
     ind = np.asarray(industrial_emissions, dtype=np.float64)
     ind_rf = _extend(industrial, y, ind - ind[0])
-    factor = _harmonise(
-        ind_rf, y, harmonisation_reference_year, harmonisation_target, factor
-    )
 
     bio_rf = on_axis(biomass, y)
     sw = _switch_index(y, biomass.last_year())
@@ -197,29 +170,17 @@ def direct_aerosol(  # noqa: PLR0913
     change = (mid[sw:] - mid[sw])[:, None] * 0.5
     sign = np.where(bio_rf[sw] / mid[sw] < 0, -1.0, 1.0)
     bio_rf[sw:] = sign * change + bio_rf[sw]
-    return ind_rf * factor, bio_rf * factor
+    return ind_rf, bio_rf
 
 
-def bc_on_snow(  # noqa: PLR0913
-    years: ArrayLike,
-    history: AerosolHistory,
-    bc_emissions: ArrayLike,
-    *,
-    harmonisation_target: float | None = None,
-    harmonisation_reference_year: float = 2019,
-    factor: float | None = None,
+def bc_on_snow(
+    years: ArrayLike, history: AerosolHistory, bc_emissions: ArrayLike
 ) -> NDArray[np.float64]:
-    """Return black carbon on snow forcing relative to the first year.
+    """Unscaled black carbon on snow forcing, extended with total BC emissions.
 
-    The file is extended with total BC emissions
-    and harmonised to ``harmonisation_target``, or scaled by ``factor``.
+    `ForcingAggregation` takes it relative to the first year after scaling.
     """
-    y = np.asarray(years, dtype=np.float64)
-    rf = _extend(history, y, bc_emissions)
-    factor = _harmonise(
-        rf, y, harmonisation_reference_year, harmonisation_target, factor
-    )
-    return rf * factor - rf[0] * factor
+    return _extend(history, np.asarray(years, dtype=np.float64), bc_emissions)
 
 
 def _hold_after(
@@ -232,55 +193,23 @@ def _hold_after(
     return out
 
 
-def land_use(  # noqa: PLR0913
-    years: ArrayLike,
-    history: AerosolHistory,
-    land_use_co2: ArrayLike,
-    *,
-    harmonisation_target: float | None = None,
-    harmonisation_reference_year: float = 2019,
-    constant_after: float = 2018,
-    factor: float | None = None,
+def land_use(
+    years: ArrayLike, history: AerosolHistory, land_use_co2: ArrayLike
 ) -> NDArray[np.float64]:
-    """Land-use albedo forcing.
+    """Unscaled land-use albedo forcing.
 
-    The file is extended with cumulative land-use CO2 emissions and held
-    after ``constant_after``, which does not affect harmonisation.
-    It is harmonised to ``harmonisation_target``, or scaled by ``factor``.
+    The file is extended with cumulative land-use CO2 emissions.
     Years before the file have no land-use forcing.
     """
     y = np.asarray(years, dtype=np.float64)
-    raw = _extend(history, y, np.cumsum(land_use_co2), before=0.0)
-    factor = _harmonise(
-        raw, y, harmonisation_reference_year, harmonisation_target, factor
-    )
-    return _hold_after(raw, y, constant_after) * factor
+    return _extend(history, y, np.cumsum(land_use_co2), before=0.0)
 
 
-def mineral_dust(  # noqa: PLR0913
-    years: ArrayLike,
-    land_use_history: AerosolHistory,
-    land_use_co2: ArrayLike,
-    pattern: ArrayLike,
-    *,
-    harmonisation_target: float | None = None,
-    harmonisation_reference_year: float = 2019,
-    constant_after: float = 2018,
-    factor: float | None = None,
+def mineral_dust(
+    years: ArrayLike, land_use_history: AerosolHistory, land_use_co2: ArrayLike
 ) -> NDArray[np.float64]:
-    """Mineral dust forcing, following global land-use forcing on its own pattern.
-
-    It is harmonised to ``harmonisation_target``, or scaled by ``factor``.
-    """
-    y = np.asarray(years, dtype=np.float64)
-    raw = area_mean(_extend(land_use_history, y, np.cumsum(land_use_co2), before=0.0))
-    if factor is None:
-        i = _switch_index(y, harmonisation_reference_year)
-        factor = _scale(harmonisation_target, None, raw[i] - raw[0])
-    scaled = raw * factor
-    p = np.asarray(pattern, dtype=np.float64)
-    boxes = scaled[:, None] * p / area_mean(p)
-    return _hold_after(boxes, y, constant_after)
+    """Unscaled global mineral dust forcing, which follows global land-use forcing."""
+    return area_mean(land_use(years, land_use_history, land_use_co2))
 
 
 def _nitrate_total(  # noqa: PLR0913

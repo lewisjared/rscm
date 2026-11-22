@@ -140,7 +140,7 @@ Internal efficacies are the defaults in `python/rscm/magicc/data/magicc7/default
 | `Aerosols|Direct Effect|OC|Fossil`       | `OC`                 | box    | 1.104               | 1.0          |
 | `Aerosols|Direct Effect|NO3|Fossil`      | `NO3`                | box    | 1.000               | 1.0          |
 | `Aerosols|Direct Effect|Biomass Burning` | `AER_DIR`            | box    | 1.135               |              |
-| `Aerosols|Direct Effect|Mineral Dust`    | `AER_DIR`            | box    | 1.135               | 2.0          |
+| `Aerosols|Direct Effect|Mineral Dust`    | `AER_DIR`            | global | 1.135               | 2.0          |
 | `Aerosols|Indirect Effect`               | `CLOUD_ALBEDO`       | box    | 1.097               | 0.8          |
 | `Black Carbon on Snow`                   | `BCSNOW`             | box    | 1.263               | 1.0          |
 | `Land-use Change`                        | `LANDUSE`            | box    | 1.204               | 1.5          |
@@ -155,6 +155,13 @@ Notes on the table:
   Like mineral dust, it takes the direct aerosol efficacy and pattern (`AER_DIR`).
 - **Patterns from forcing**: land use and BC on snow take their pattern from their box forcing in
   `RF_REGIONS_NORMYEAR`, and nitrate from its total forcing in that year.
+- **Scaling**: an agent's `scale` multiplies its ERF before the efficacy.
+  With `harmonisation`, the scale is `target` over the change in the agent's global input
+  from `preindustrial_reference_year` to `reference_year`, as `RF_*_APPLY = 1` sets in MAGICC7.
+  `sum_of_scale_from` gives each biomass aerosol the scale of its industrial agent.
+- **Mineral dust**: a global input spread with `spreading_pattern` (`RF_REGIONS_DUST`),
+  each box being the scaled ERF times the pattern over the pattern's area mean.
+  Like land use, it holds after `constant_after_year`.
 - **Volcanic**: monthly volcanic forcing (`RF_EFFICACY_VOLC`, `SRF_FACTOR_VOLC` 0.7) goes straight to the
   climate model, through `ClimateUDEB`'s `subannual_forcing` in RSCM.
 - **Not in the default total**: cloud cover is zero by default ([indirect aerosol forcing](module_06_aerosol_indirect.md)),

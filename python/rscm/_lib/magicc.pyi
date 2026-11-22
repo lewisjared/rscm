@@ -33,6 +33,7 @@ Forcing:
 - AerosolIndirectBuilder: Indirect aerosol cloud effects
 """
 
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal, NotRequired, Required, TypedDict, final
 
 import numpy as np
@@ -1246,6 +1247,24 @@ class ForcingAgent(TypedDict, total=False):
 
     MAGICC7 does this for halocarbons.
     """
+    harmonisation: Harmonisation
+    """Scale the ERF to a target change, in place of ``scale``."""
+    sum_of_scale_from: list[str]
+    """Agent whose scale each ``sum_of`` variable takes, or empty for this agent's."""
+    spreading_pattern: tuple[float, float, float, float]
+    """Pattern spreading a global ERF over the boxes, not ``regional_pattern``."""
+    constant_after_year: float
+    """Hold the ERF at its value in this year afterwards."""
+    relative_to_year: float
+    """Subtract the scaled ERF in this year."""
+
+class Harmonisation(TypedDict, total=False):
+    """Harmonisation of an agent's ERF to a target change since pre-industrial."""
+
+    target: Required[float]
+    """Global ERF change to harmonise to, in W/m²."""
+    reference_year: Required[float]
+    preindustrial_reference_year: float
 
 type ForcingCategory = Literal["greenhouse_gas", "aerosol", "anthropogenic", "natural"]
 """Which of the greenhouse gas, aerosol and anthropogenic ERF an agent counts towards.
@@ -1304,11 +1323,36 @@ class ForcingAggregationBuilder(ComponentBuilder):
     ) -> ForcingAggregationBuilder:
         """Create a builder from a parameter dictionary."""
     def aggregate(
-        self, values: list[list[float]]
+        self,
+        values: list[list[float]],
+        inputs: Mapping[str, NDArray[np.float64]] | None = None,
+        time: Sequence[float] | None = None,
     ) -> tuple[float, tuple[float, float, float, float]]:
         """Return total effective radiative forcing and box forcing.
 
-        Takes each agent's value or box values.
+        Both are at the first of ``time``.
+
+        Takes the value or box values of each agent variable,
+        each ``sum_of`` variable in turn.
+        ``inputs`` holds the prescribed series of agent variables on ``time``,
+        which harmonised, held and relative agents read.
+        """
+    def variable_scales(
+        self,
+        inputs: Mapping[str, NDArray[np.float64]] | None = None,
+        time: Sequence[float] | None = None,
+    ) -> dict[str, float]:
+        """Return the scale of each agent variable from ``inputs`` on ``time``."""
+    def variable_box_forcing(
+        self,
+        inputs: Mapping[str, NDArray[np.float64]],
+        time: Sequence[float],
+        at: Sequence[float] | None = None,
+    ) -> dict[str, NDArray[np.float64]]:
+        """Return the scaled box ERF before efficacies of each variable in ``inputs``.
+
+        ``inputs`` are on ``time``, and the result has a row for each of ``at``,
+        which defaults to ``time``.
         """
     def internal_efficacies(self, ecs: float, erf_2xco2: float) -> list[float]:
         """Return each agent's internal efficacy at climate sensitivity ``ecs``.

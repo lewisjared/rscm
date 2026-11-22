@@ -246,15 +246,28 @@ for key in (
 # `full.load_inputs` reads the MAGICC7 input files packaged with RSCM:
 # historical aerosol forcing patterns and optical thickness, land-use albedo forcing,
 # and solar and monthly volcanic forcing.
-# `full.prescribed_forcing` scales the historical patterns with the emissions,
-# as MAGICC7 does, and returns four-box ERF for thirteen agents.
-# The global mean is the area-weighted mean of the four boxes.
+# `full.prescribed_forcing` extends the historical patterns with the emissions,
+# as MAGICC7 does, and returns the ERF of thirteen agents, four-box apart from mineral dust.
+# The direct aerosol, dust, land-use and BC on snow ERF is unscaled,
+# because `ForcingAggregation` applies MAGICC7's factors and harmonisation.
+# `variable_box_forcing` shows the scaled boxes,
+# whose global mean is their area-weighted mean.
 
 # %%
 ERF = "Effective Radiative Forcing"
 area = np.array(pr.area_fractions())
 inputs = full.load_inputs(parameters)
 prescribed = full.prescribed_forcing(years, emissions, parameters, inputs)
+scaled = {
+    name.removeprefix(f"{ERF}|"): boxes
+    for name, boxes in ForcingAggregationBuilder.from_parameters(
+        {"agents": full.forcing_agents(parameters, years, prescribed, emissions)}
+    )
+    .variable_box_forcing(
+        {f"{ERF}|{name}": values for name, values in prescribed.items()}, list(years)
+    )
+    .items()
+}
 
 # %% tags=["remove_input"]
 groups = {
@@ -268,7 +281,7 @@ groups = {
 }
 fig, ax = plt.subplots(figsize=(10, 4))
 for label, names in groups.items():
-    ax.plot(years, sum(prescribed[name] for name in names) @ area, label=label)
+    ax.plot(years, sum(scaled[name] for name in names) @ area, label=label)
 ax.axhline(0, color="grey", linewidth=0.5)
 ax.set_ylabel("W/m^2")
 ax.set_title("Prescribed forcing, global mean")
@@ -323,14 +336,13 @@ def with_prefix(terms):
     return [with_prefix(t) if isinstance(t, list) else f"{ERF}|{t}" for t in terms]
 
 
-aggregation = ForcingAggregationBuilder.from_parameters(
-    {
-        "agents": agents,
-        "efficacy_method": full.EFFICACY_METHODS[p["rf_efficacy_apply"]],
-        "climate": full.efficacy_climate(climate_parameters),
-        "summation": with_prefix(full.SUMMATION),
-    }
-)
+aggregation_parameters = {
+    "agents": agents,
+    "efficacy_method": full.EFFICACY_METHODS[p["rf_efficacy_apply"]],
+    "climate": full.efficacy_climate(climate_parameters),
+    "summation": with_prefix(full.SUMMATION),
+}
+aggregation = ForcingAggregationBuilder.from_parameters(aggregation_parameters)
 
 # %% [markdown]
 # Permafrost and the chemistry come next.
@@ -547,6 +559,7 @@ prescribed_emissions = {
     },
 }
 prescribed_erf = {f"{ERF}|{name}": values for name, values in prescribed.items()}
+four_box_erf = {name for name, values in prescribed_erf.items() if values.ndim == 2}
 
 # %% [markdown]
 # A `VariableSchema` declares every variable with its unit and grid.
@@ -557,7 +570,10 @@ prescribed_erf = {f"{ERF}|{name}": values for name, values in prescribed.items()
 # A hidden cell collects `grids`, the unit and grid of each variable, from the inputs and the definitions.
 
 # %% tags=["remove_input"]
-grids = {name: ("W/m^2", GridType.FourBox) for name in prescribed_erf}
+grids = {
+    name: ("W/m^2", GridType.FourBox if name in four_box_erf else GridType.Scalar)
+    for name in prescribed_erf
+}
 grids |= {
     name: (unit, GridType.Scalar) for name, (_, unit) in prescribed_emissions.items()
 }
@@ -573,7 +589,8 @@ for name, (unit, grid) in grids.items():
     schema.add_variable(name, unit, grid)
 n_four_box_variables = sum(g == GridType.FourBox for _, g in grids.values())
 print(
-    f"{len(prescribed_emissions)} scalar and {len(prescribed_erf)} four-box prescribed inputs"
+    f"{len(prescribed_emissions) + len(prescribed_erf) - len(four_box_erf)} scalar"
+    f" and {len(four_box_erf)} four-box prescribed inputs"
 )
 print(f"{len(grids)} variables, {n_four_box_variables} on four boxes")
 
@@ -615,22 +632,24 @@ initial_values = {
 
 # %% [markdown]
 # The climate needs the forcing at the first boundary.
-# `ForcingAggregation.aggregate` turns one value per agent, `initial_agents`,
-# into the total and four-box forcing,
+# `ForcingAggregation.aggregate` turns one value per agent variable, `initial_agents`,
+# into the total and four-box forcing.
+# It reads the prescribed ERF series too, for harmonisation.
 # and `ClimateUDEB.initial_values` gives the matching climate state.
 # The prescribed agents take their first-year forcing and the calculated agents start at zero,
 # apart from F-gases, which the next section fills in.
 
 # %% tags=["remove_input"]
-first_year = {
-    **prescribed_erf,
-    f"{ERF}|{full.BIOMASS}": sum(prescribed[name] for name in full.BIOMASS_AGENTS),
-}
-initial_agents = [
-    list(first_year.get(agent["variable"], np.zeros((1, 4)))[0])
-    if agent["regional"]
-    else [0.0]
+variables = [
+    (agent, name)
     for agent in agents
+    for name in agent.get("sum_of") or [agent["variable"]]
+]
+initial_agents = [
+    list(np.atleast_1d(prescribed_erf[name][0]))
+    if name in prescribed_erf
+    else [0.0] * (4 if agent["regional"] else 1)
+    for agent, name in variables
 ]
 
 # %% [markdown]
@@ -641,8 +660,8 @@ initial_agents = [
 
 
 # %%
-def build_model(n_years, initial_agents):
-    """Build the coupled model over the first `n_years` years."""
+def build_model(n_years, initial_agents, builders):
+    """Build the coupled model of `builders` over the first `n_years` years."""
     axis = TimeAxis.from_values(years[:n_years])
     builder = (
         ModelBuilder()
@@ -650,8 +669,8 @@ def build_model(n_years, initial_agents):
         .with_schema(schema)
         .with_grid_weights(GridType.FourBox, list(area))
     )
-    for label, component in components.items():
-        builder.with_component_as(label, component)
+    for label, component in builders.items():
+        builder.with_component_as(label, component.build())
     for variable in lag:
         builder.with_lag(variable)
     for variable, consumer in lag_for:
@@ -661,13 +680,14 @@ def build_model(n_years, initial_agents):
             name, Timeseries(values[:n_years], axis, unit, InterpolationStrategy.Linear)
         )
     for name, values in prescribed_erf.items():
+        series = FourBoxTimeseries if name in four_box_erf else Timeseries
         builder.with_prescribed_variable(
             name,
-            FourBoxTimeseries(
-                values[:n_years], axis, "W/m^2", InterpolationStrategy.Linear
-            ),
+            series(values[:n_years], axis, "W/m^2", InterpolationStrategy.Linear),
         )
-    total, boxes = aggregation.aggregate(initial_agents)
+    total, boxes = builders["ForcingAggregation"].aggregate(
+        initial_agents, prescribed_erf, list(years)
+    )
     builder.with_initial_values({**initial_values, **climate.initial_values(total)})
     builder.with_initial_grid_values({EFFICACY_ADJUSTED_ERF: list(boxes)})
     return builder.build()
@@ -676,15 +696,23 @@ def build_model(n_years, initial_agents):
 # %% [markdown]
 # MAGICC7 starts from the second year's F-gas forcing.
 # A two-year run of the same model supplies it before the full model is built.
+# Its harmonised agents keep the scales of the whole run, from `full.resolve_scales`.
 
 # %%
-fgas = [agent["variable"] for agent in agents].index(f"{ERF}|F-Gases")
-two_years = build_model(2, initial_agents)
+fgas = [agent["variable"] for agent, _ in variables].index(f"{ERF}|F-Gases")
+resolved = ForcingAggregationBuilder.from_parameters(
+    {
+        **aggregation_parameters,
+        "agents": full.resolve_scales(agents, prescribed_erf, years),
+    }
+)
+two_years = build_model(2, initial_agents, builders | {"ForcingAggregation": resolved})
 two_years.run()
 fgas_boxes = two_years.timeseries().get_four_box_timeseries_by_name(f"{ERF}|F-Gases")
+# The F-gas agent's forcing goes to its first variable, and its others stay zero.
 initial_agents[fgas] = list(fgas_boxes.values()[1])
 
-model = build_model(len(years), initial_agents)
+model = build_model(len(years), initial_agents, builders)
 
 # %% [markdown]
 # ## The component graph
@@ -893,7 +921,7 @@ forcing = {
     "Ozone": sum(series(f"{ERF}|Ozone|{name}") for name in ozone),
     "Stratospheric H2O": series(f"{ERF}|CH4 Oxidation Stratospheric H2O"),
     **{
-        label: sum(prescribed[name] for name in names) @ area
+        label: sum(scaled[name] for name in names) @ area
         for label, names in groups.items()
     },
 }

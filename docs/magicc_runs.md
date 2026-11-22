@@ -120,6 +120,12 @@ The forcing MAGICC7 prescribes before the run comes from `rscm.magicc.prescribed
 and MAGICC7's input files packaged in `rscm.magicc`.
 This covers aerosols, black carbon on snow, land-use albedo, solar and volcanic forcing.
 `full.prescribed_forcing` returns the four-box ERF of each of these agents before efficacies.
+The direct SOx, BC and OC, mineral dust, land-use and BC on snow ERF it returns are unscaled.
+`ForcingAggregation` scales them with each agent's `scale` or `harmonisation`,
+so changing those on the built configuration needs no new translation.
+It also holds land-use and dust forcing after `constant_after_year`,
+spreads global dust forcing with `spreading_pattern`,
+and takes BC on snow relative to 1750 with `relative_to_year`.
 `full.natural_emissions` calculates the natural CH4 and N2O emissions that close MAGICC7's budget.
 They are stated parameters of the components, so they can be changed on the configuration.
 `N2OChemistryBuilder.natural_emissions_in_balance` instead gives the natural N2O emissions

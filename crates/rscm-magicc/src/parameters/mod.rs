@@ -29,7 +29,7 @@ pub use climate_udeb::{
 };
 pub use co2_budget::CO2BudgetParameters;
 pub use forcing_aggregation::{
-    EfficacyClimate, ForcingAgent, ForcingAggregationParameters, ForcingTerm,
+    EfficacyClimate, ForcingAgent, ForcingAggregationParameters, ForcingTerm, Harmonisation,
 };
 pub use ghg_forcing::{ForcingMethod, GHGForcingParameters};
 pub use halocarbon::{FGasRegions, HalocarbonChemistryParameters, HalocarbonSpecies};

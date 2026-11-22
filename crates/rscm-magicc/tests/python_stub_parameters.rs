@@ -206,6 +206,8 @@ fn magicc_stub_typeddicts_match_rust_parameters() {
         "include_unset_lamcalc_error": false,
     }))
     .unwrap();
+    let harmonisation: Harmonisation =
+        serde_json::from_value(json!({"target": 1.0, "reference_year": 2019.0})).unwrap();
     let fixation: PrognosticFixation = serde_json::from_value(json!({
         "maximum_fixation_rate": 1.0, "half_saturation_npp": 1.0,
     }))
@@ -227,6 +229,7 @@ fn magicc_stub_typeddicts_match_rust_parameters() {
         ("SubannualForcing", to_json(&subannual)),
         ("ForcingAgent", to_json(&agent)),
         ("EfficacyClimate", to_json(&climate)),
+        ("Harmonisation", to_json(&harmonisation)),
         ("PrognosticFixation", to_json(&fixation)),
         ("DepositionFromEmissions", to_json(&deposition)),
         ("TroposphericOzoneRegions", to_json(&ozone)),

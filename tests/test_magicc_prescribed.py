@@ -77,19 +77,6 @@ def test_volcanic_internal_efficacy_follows_the_climate():
     assert efficacy(2.0) != efficacy(4.5)
 
 
-def test_harmonise_returns_a_given_factor():
-    years = np.array([2000.0, 2001.0, 2002.0])
-
-    assert pr._harmonise(np.ones((3, 4)), years, 2001, None, factor=0.5) == 0.5
-
-
-def test_harmonise_needs_a_target_or_factor():
-    years = np.array([2000.0, 2001.0, 2002.0])
-
-    with pytest.raises(ValueError, match="harmonisation_target or factor"):
-        pr._harmonise(np.ones((3, 4)), years, 2001, None)
-
-
 def test_volcanic_substeps_build_from_a_shared_array():
     times = np.arange(2000.0, 2002.0, 1 / 12) + 1 / 12
     forcing = pr.volcanic_substeps(times, -np.ones(24), -np.ones(24))

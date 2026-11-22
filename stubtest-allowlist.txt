@@ -51,6 +51,7 @@ rscm._lib.magicc.ForcingCategory
 rscm._lib.magicc.ForcingTerm
 rscm._lib.magicc.Glacier
 rscm._lib.magicc.GreenlandDischarge
+rscm._lib.magicc.Harmonisation
 rscm._lib.magicc.HalocarbonSpecies
 rscm._lib.magicc.PermafrostSoil
 rscm._lib.magicc.PrognosticFixation

@@ -279,24 +279,97 @@ impl ForcingAggregationBuilder {
             .map(|parameters| Self { parameters })
     }
 
-    /// Total effective radiative forcing and four-box efficacy-adjusted forcing.
+    /// Total effective radiative forcing and four-box efficacy-adjusted forcing
+    /// at the first of `time`.
     ///
-    /// Takes one value per agent.
-    pub fn aggregate(&self, values: Vec<Vec<f64>>) -> PyResult<(f64, [f64; 4])> {
+    /// Takes one value per agent variable, each `sum_of` variable in turn.
+    /// `inputs` holds the prescribed series of agent variables on `time`,
+    /// which harmonised and held agents read.
+    #[pyo3(signature = (values, inputs=None, time=None))]
+    pub fn aggregate(
+        &self,
+        values: Vec<Vec<f64>>,
+        inputs: Option<std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<f64>>>,
+        time: Option<Vec<f64>>,
+    ) -> PyResult<(f64, [f64; 4])> {
         let component = ForcingAggregation::from_parameters(self.parameters.clone())
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
-        let agents = &component.parameters().agents;
-        let valid = values.len() == agents.len()
-            && agents
-                .iter()
-                .zip(&values)
-                .all(|(agent, v)| v.len() == if agent.regional { 4 } else { 1 });
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let lengths: Vec<usize> = component
+            .parameters()
+            .agents
+            .iter()
+            .flat_map(|agent| {
+                let n = agent.sum_of.len().max(1);
+                std::iter::repeat_n(if agent.regional { 4 } else { 1 }, n)
+            })
+            .collect();
+        let valid = values.len() == lengths.len()
+            && lengths.iter().zip(&values).all(|(n, v)| v.len() == *n);
         if !valid {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Supply one value per global agent and four per regional agent",
+            return Err(PyValueError::new_err(
+                "Supply one value per global agent variable and four per regional one",
             ));
         }
-        Ok(component.aggregate(&values))
+        let series = SeriesLookup::new(inputs, time)?;
+        component
+            .aggregate(&values, &|name, _, t| series.at(name, t), series.first())
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    /// Scaled four-box ERF before efficacies of each agent variable in the prescribed `inputs`
+    /// on `time`, at each of `at`, which defaults to `time`.
+    #[pyo3(signature = (inputs, time, at=None))]
+    pub fn variable_box_forcing(
+        &self,
+        py: Python<'_>,
+        inputs: std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<f64>>,
+        time: Vec<f64>,
+        at: Option<Vec<f64>>,
+    ) -> PyResult<std::collections::HashMap<String, Py<PyAny>>> {
+        let component = ForcingAggregation::from_parameters(self.parameters.clone())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let at = at.unwrap_or_else(|| time.clone());
+        let series = SeriesLookup::new(Some(inputs), Some(time))?;
+        let forcing = component
+            .variable_box_forcing(
+                &|name, _, t| series.at(name, t),
+                &|name| series.series.contains_key(name),
+                &at,
+            )
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        forcing
+            .into_iter()
+            .map(|(name, boxes)| {
+                let array = numpy::PyArray2::from_vec2(
+                    py,
+                    &boxes.iter().map(|b| b.to_vec()).collect::<Vec<_>>(),
+                )?;
+                Ok((name, array.into_any().unbind()))
+            })
+            .collect()
+    }
+
+    /// Scale of each agent variable, keyed by variable, from the prescribed `inputs` on `time`.
+    #[pyo3(signature = (inputs=None, time=None))]
+    pub fn variable_scales(
+        &self,
+        inputs: Option<std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<f64>>>,
+        time: Option<Vec<f64>>,
+    ) -> PyResult<std::collections::HashMap<String, f64>> {
+        let component = ForcingAggregation::from_parameters(self.parameters.clone())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let series = SeriesLookup::new(inputs, time)?;
+        let scales = component
+            .variable_scales(&|name, _, t| series.at(name, t))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let names = component.parameters().agents.iter().flat_map(|agent| {
+            if agent.sum_of.is_empty() {
+                std::slice::from_ref(&agent.variable)
+            } else {
+                agent.sum_of.as_slice()
+            }
+        });
+        Ok(names.cloned().zip(scales).collect())
     }
 
     /// Internal efficacy of each agent at equilibrium climate sensitivity `ecs`
@@ -312,6 +385,70 @@ impl ForcingAggregationBuilder {
         ForcingAggregation::from_parameters(self.parameters.clone())
             .map(|component| PyRustComponent(std::sync::Arc::new(component)))
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+    }
+}
+
+/// Prescribed series by name on a time axis, read at any time as a model window reads them.
+struct SeriesLookup {
+    series: std::collections::HashMap<String, Vec<Vec<f64>>>,
+    time: Vec<f64>,
+}
+
+impl SeriesLookup {
+    fn new(
+        inputs: Option<std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<f64>>>,
+        time: Option<Vec<f64>>,
+    ) -> PyResult<Self> {
+        let time = time.unwrap_or_default();
+        let mut series = std::collections::HashMap::new();
+        for (name, array) in inputs.unwrap_or_default() {
+            let array = array.as_array();
+            if array.shape().first() != Some(&time.len()) || array.ndim() > 2 {
+                return Err(PyValueError::new_err(format!(
+                    "{name} needs one row per time, got shape {:?}",
+                    array.shape()
+                )));
+            }
+            let rows = array
+                .outer_iter()
+                .map(|row| row.iter().copied().collect())
+                .collect();
+            series.insert(name, rows);
+        }
+        Ok(Self { series, time })
+    }
+
+    fn first(&self) -> f64 {
+        self.time.first().copied().unwrap_or(f64::NAN)
+    }
+
+    /// Value at a node, held beyond the ends and linear between nodes.
+    fn at(&self, name: &str, t: f64) -> rscm_core::errors::RSCMResult<Vec<f64>> {
+        let rows = self.series.get(name).ok_or_else(|| {
+            rscm_core::errors::RSCMError::Error(format!("no prescribed series for {name}"))
+        })?;
+        let time = &self.time;
+        let Some(last) = time.len().checked_sub(1) else {
+            return Err(rscm_core::errors::RSCMError::Error(format!(
+                "{name} needs the time of its prescribed series"
+            )));
+        };
+        if t <= time[0] {
+            return Ok(rows[0].clone());
+        }
+        if t >= time[last] {
+            return Ok(rows[last].clone());
+        }
+        let i = time.partition_point(|&x| x <= t) - 1;
+        if time[i] == t {
+            return Ok(rows[i].clone());
+        }
+        let w = (t - time[i]) / (time[i + 1] - time[i]);
+        Ok(rows[i]
+            .iter()
+            .zip(&rows[i + 1])
+            .map(|(a, b)| a + w * (b - a))
+            .collect())
     }
 }
 

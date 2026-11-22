@@ -17,6 +17,7 @@ import pytest
 from regression import full_run
 from rscm._lib.magicc import (
     ClimateUDEBBuilder,
+    ForcingAggregationBuilder,
     GHGForcingBuilder,
     HalocarbonChemistryBuilder,
     OzoneForcingBuilder,
@@ -556,3 +557,79 @@ def test_from_magicc7_zero_nitrate_factor():
         SURFACE_AIR_TEMPERATURE_CHANGE
     )
     assert np.isfinite(temperature.values()[:-1]).all()
+
+
+def _magicc7(parameters):
+    run = full_run.load_default()
+    return full.from_magicc7(
+        run.time_axis,
+        full_run.magicc7_emissions(run),
+        parameters={**run.parameters, **parameters},
+        convention=Convention.MAGICC7,
+    )
+
+
+def _box_forcing(config, inputs):
+    agents = config["components"]["ForcingAggregation"]["agents"]
+    time = full_run.load_default().years
+    erf = {k: v for k, (v, _) in inputs.items() if k.startswith(ERF)}
+    return ForcingAggregationBuilder.from_parameters(
+        {"agents": agents}
+    ).variable_box_forcing(erf, list(time))
+
+
+@pytest.mark.parametrize(
+    ("parameters", "agent", "fields"),
+    [
+        (
+            {"rf_soxi_dir_wm2": -0.5},
+            "Aerosols|Direct Effect|SOx|Fossil",
+            {"harmonisation": {"target": -0.5}},
+        ),
+        (
+            {"rf_landuse_albedo_apply": 2, "rf_landuse_albedo_factor": 0.7},
+            "Land-use Change",
+            {"harmonisation": None, "scale": 0.7},
+        ),
+        (
+            {"rf_bcsnow_albedo_yr": 2000},
+            "Black Carbon on Snow",
+            {"harmonisation": {"reference_year": 2000.0}},
+        ),
+        (
+            {"rf_regions_dust": [1.0, 2.0, 3.0, 4.0]},
+            "Aerosols|Direct Effect|Mineral Dust",
+            {"spreading_pattern": [1.0, 2.0, 3.0, 4.0]},
+        ),
+        (
+            {"rf_mineraldust_constantafteryr": 1990},
+            "Aerosols|Direct Effect|Mineral Dust",
+            {"constant_after_year": 1990.0},
+        ),
+    ],
+)
+def test_direct_aerosol_scaling_follows_spec(parameters, agent, fields):
+    """Changing a scaling on the spec matches rebuilding with the MAGICC7 parameter.
+
+    The prescribed ERF inputs are unscaled, so they do not change.
+    """
+    config, inputs = _magicc7({})
+    expected_config, expected_inputs = _magicc7(parameters)
+    for name, (values, _) in expected_inputs.items():
+        if name.startswith(ERF):
+            npt.assert_array_equal(values, inputs[name][0], err_msg=name)
+
+    for a in config["components"]["ForcingAggregation"]["agents"]:
+        if a["variable"] == f"{ERF}|{agent}":
+            for key, value in fields.items():
+                if isinstance(value, dict):
+                    a[key] = {**a[key], **value}
+                elif value is None:
+                    a.pop(key)
+                else:
+                    a[key] = value
+
+    actual = _box_forcing(config, inputs)
+    expected = _box_forcing(expected_config, expected_inputs)
+    for name, values in expected.items():
+        npt.assert_array_equal(actual[name], values, err_msg=name)
