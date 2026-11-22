@@ -1,9 +1,9 @@
-//! Grid validation tests: grid mismatch detection.
+//! Grid validation tests: coupling across grids.
 
 use crate::component::{Component, InputState, OutputState, VariableDefinition};
 use crate::errors::RSCMResult;
 use crate::model::ModelBuilder;
-use crate::spatial::SpatialGrid;
+use crate::spatial::{FourBoxGrid, SpatialGrid};
 use crate::state::{FourBoxSlice, StateValue};
 use crate::timeseries::{Time, TimeAxis};
 use numpy::ndarray::Array;
@@ -89,23 +89,21 @@ impl Component for FourBoxConsumer {
 }
 
 #[test]
-fn test_grid_mismatch_returns_error() {
-    // This should return an error because FourBoxProducer outputs FourBox
-    // but ScalarConsumer expects Scalar
-    let result = ModelBuilder::new()
+fn test_coarser_reader_of_a_finer_producer_aggregates() {
+    let mut model = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
         .with_component(Arc::new(FourBoxProducer))
         .with_component(Arc::new(ScalarConsumer))
-        .build();
+        .build()
+        .unwrap();
+    model.run();
 
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    let err_msg = err.to_string();
-    assert!(err_msg.contains("Grid mismatch for variable 'Temperature'"));
-    assert!(err_msg.contains("FourBoxProducer"));
-    assert!(err_msg.contains("ScalarConsumer"));
-    assert!(err_msg.contains("four_box"));
-    assert!(err_msg.contains("scalar"));
+    let global = FourBoxGrid::magicc_standard().aggregate_global(&[288.0, 290.0, 287.0, 285.0]);
+    let result = model.timeseries().get_data("Result").unwrap();
+    assert_eq!(
+        result.as_scalar().unwrap().at_scalar(1).unwrap(),
+        global * 2.0
+    );
 }
 
 #[test]

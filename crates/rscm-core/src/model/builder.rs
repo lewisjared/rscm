@@ -10,7 +10,6 @@ use crate::spatial::SpatialGrid;
 use crate::state::VariableSource;
 use crate::timeseries::{FloatValue, GridTimeseries, TimeAxis, Timeseries};
 use crate::timeseries_collection::{TimeseriesCollection, TimeseriesData};
-use crate::units::Unit;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::Graph;
@@ -20,11 +19,11 @@ use std::sync::Arc;
 
 use super::null_component::NullComponent;
 use super::runtime::Model;
+use super::storage::{resolve_storage, Storage};
 use super::types::{
-    CGraph, GraphEdge, RequiredTransformation, ResolvedVariable, TransformDirection,
-    UnitConversionInfo, C,
+    CGraph, GraphEdge, RequiredTransformation, ResolvedVariable, TransformDirection, C,
 };
-use super::validation::{resolve_timeseries_types, verify_definition};
+use super::validation::resolve_timeseries_types;
 
 /// An input that no component or schema aggregate produces, so the model must be given it.
 #[pyclass(frozen, get_all)]
@@ -61,10 +60,7 @@ impl InitialValue {
         grid: GridType,
     ) -> RSCMResult<Vec<FloatValue>> {
         let factor = match &self.unit {
-            Some(unit) => {
-                ModelBuilder::check_unit_compatibility(name, "initial value", unit, storage_unit)?
-                    .map_or(1.0, |conversion| conversion.factor)
-            }
+            Some(unit) => crate::units::factor(name, unit, storage_unit)?.unwrap_or(1.0),
             None => 1.0,
         };
         let expected_len = match grid {
@@ -406,12 +402,9 @@ impl ModelBuilder {
 
     /// Set the variable schema for the model.
     ///
-    /// The schema defines all variables (including aggregates) that the model uses.
-    /// When a schema is provided, the builder validates:
-    /// - Component outputs are defined in the schema
-    /// - Component inputs are defined in the schema or produced by other components
-    /// - Units and grid types match between components and schema
-    ///
+    /// Each schema entry sets the unit and grid its variable is stored in,
+    /// and each aggregate adds a component that computes it.
+    /// A variable without an entry is stored as its producer declares it, or as its prescribed data is.
     /// Variables defined in the schema but not produced by any component will
     /// be initialised to NaN.
     pub fn with_schema(&mut self, schema: VariableSchema) -> &mut Self {
@@ -442,7 +435,8 @@ impl ModelBuilder {
     /// Supply prescribed data for a variable, on any grid, replacing any earlier data for it.
     ///
     /// [`Self::build`] fails if no component reads the variable or a component produces it.
-    /// It converts the data into the variable's unit, or fails if the units are incompatible.
+    /// It stores the data in the unit and grid supplied, unless a schema entry or a producer sets them,
+    /// and fails if a reader's unit cannot be converted from the stored one.
     pub fn with_prescribed_variable(
         &mut self,
         name: &str,
@@ -457,7 +451,7 @@ impl ModelBuilder {
     /// Supply prescribed data from a collection, replacing any earlier data for the same variables.
     ///
     /// Any unneeded timeseries will be ignored.
-    /// [`Self::build`] converts the data into the variable's unit, or fails if the units are incompatible.
+    /// [`Self::build`] stores the data as [`Self::with_prescribed_variable`] does.
     pub fn with_prescribed_collection(&mut self, collection: TimeseriesCollection) -> &mut Self {
         for item in collection {
             self.prescribed_variables.set_data(item.name, item.data);
@@ -570,199 +564,6 @@ impl ModelBuilder {
         self
     }
 
-    /// Validate a component's variable definitions against the schema.
-    ///
-    /// Checks that:
-    /// - All outputs are defined in the schema (as variables or aggregates)
-    /// - All inputs are defined in the schema (as variables or aggregates)
-    /// - Units are dimensionally compatible between component and schema
-    /// - Grid types are compatible (allowing aggregation where valid)
-    ///
-    /// Returns a tuple of:
-    /// - A list of required grid transformations for mismatched grids
-    /// - A list of unit conversions needed at runtime
-    fn validate_component_against_schema(
-        &self,
-        schema: &VariableSchema,
-        component_name: &str,
-        inputs: &[VariableDefinition],
-        outputs: &[VariableDefinition],
-        modelled: &HashMap<String, NodeIndex>,
-    ) -> RSCMResult<(Vec<RequiredTransformation>, Vec<UnitConversionInfo>)> {
-        let mut transformations = Vec::new();
-        let mut unit_conversions = Vec::new();
-
-        // Validate outputs
-        // Write-side: component produces finer grid than schema -> aggregate before storage
-        for output in outputs {
-            // Check if output is defined in schema
-            if !schema.contains(&output.name) {
-                return Err(RSCMError::SchemaUndefinedOutput {
-                    component: component_name.to_string(),
-                    variable: output.name.clone(),
-                    unit: output.unit.clone(),
-                });
-            }
-
-            // Check unit compatibility (not just string equality)
-            if let Some(schema_unit) = schema.get_unit(&output.name) {
-                if let Some(conversion) = Self::check_unit_compatibility(
-                    &output.name,
-                    component_name,
-                    schema_unit,
-                    &output.unit,
-                )? {
-                    unit_conversions.push(conversion);
-                }
-            }
-
-            // Check grid type compatibility
-            if let Some(schema_grid) = schema.get_grid(&output.name) {
-                if schema_grid != output.grid {
-                    // Write-side: component grid can aggregate to schema grid?
-                    // Component produces finer data -> aggregation to schema is OK
-                    if output.grid.can_aggregate_to(schema_grid) {
-                        // Valid write-side aggregation needed
-                        transformations.push(RequiredTransformation {
-                            variable: output.name.clone(),
-                            unit: output.unit.clone(),
-                            source_grid: output.grid,
-                            target_grid: schema_grid,
-                            direction: TransformDirection::Write,
-                        });
-                    } else {
-                        // Invalid: would require disaggregation (broadcast)
-                        // Component produces coarser data than schema expects
-                        return Err(RSCMError::GridTransformationNotSupported {
-                            variable: output.name.clone(),
-                            source_grid: output.grid.to_string(),
-                            target_grid: schema_grid.to_string(),
-                        });
-                    }
-                }
-            }
-        }
-
-        // Validate inputs
-        // Read-side: component wants coarser grid than schema -> aggregate before read
-        for input in inputs {
-            // Input is valid if:
-            // 1. It's defined in the schema (as variable or aggregate), OR
-            // 2. It's produced by another component (modelled)
-            if !schema.contains(&input.name) && !modelled.contains_key(&input.name) {
-                return Err(RSCMError::SchemaUndefinedInput {
-                    component: component_name.to_string(),
-                    variable: input.name.clone(),
-                    unit: input.unit.clone(),
-                });
-            }
-
-            // If it's in the schema, check unit and grid type compatibility
-            if schema.contains(&input.name) {
-                if let Some(schema_unit) = schema.get_unit(&input.name) {
-                    if let Some(conversion) = Self::check_unit_compatibility(
-                        &input.name,
-                        component_name,
-                        schema_unit,
-                        &input.unit,
-                    )? {
-                        unit_conversions.push(conversion);
-                    }
-                }
-
-                if let Some(schema_grid) = schema.get_grid(&input.name) {
-                    if schema_grid != input.grid {
-                        // Read-side: schema grid can aggregate to component grid?
-                        // Schema has finer data -> aggregation for component is OK
-                        if schema_grid.can_aggregate_to(input.grid) {
-                            // Valid read-side aggregation needed
-                            transformations.push(RequiredTransformation {
-                                variable: input.name.clone(),
-                                unit: input.unit.clone(),
-                                source_grid: schema_grid,
-                                target_grid: input.grid,
-                                direction: TransformDirection::Read,
-                            });
-                        } else {
-                            // Invalid: would require disaggregation (broadcast)
-                            // Component wants finer data than schema provides
-                            return Err(RSCMError::GridTransformationNotSupported {
-                                variable: input.name.clone(),
-                                source_grid: schema_grid.to_string(),
-                                target_grid: input.grid.to_string(),
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok((transformations, unit_conversions))
-    }
-
-    /// Check if two units are compatible and return conversion info if needed.
-    ///
-    /// Returns:
-    /// - `Ok(None)` if units are identical (no conversion needed)
-    /// - `Ok(Some(conversion))` if units are compatible but different
-    /// - `Err(...)` if units are incompatible (different dimensions)
-    fn check_unit_compatibility(
-        variable: &str,
-        component: &str,
-        schema_unit: &str,
-        component_unit: &str,
-    ) -> RSCMResult<Option<UnitConversionInfo>> {
-        // Fast path: exact string match
-        if schema_unit == component_unit {
-            return Ok(None);
-        }
-
-        // Parse both units
-        let parsed_schema = Unit::parse(schema_unit).map_err(|e| RSCMError::UnitParseError {
-            variable: variable.to_string(),
-            unit_string: schema_unit.to_string(),
-            details: e.to_string(),
-        })?;
-
-        let parsed_component =
-            Unit::parse(component_unit).map_err(|e| RSCMError::UnitParseError {
-                variable: variable.to_string(),
-                unit_string: component_unit.to_string(),
-                details: e.to_string(),
-            })?;
-
-        // Check if they're the same after normalisation
-        if parsed_schema == parsed_component {
-            return Ok(None);
-        }
-
-        // Check dimensional compatibility
-        if !parsed_schema.is_compatible(&parsed_component) {
-            return Err(RSCMError::incompatible_units(
-                variable,
-                &parsed_schema,
-                &parsed_component,
-            ));
-        }
-
-        // Calculate conversion factor from schema unit to component unit
-        let factor = parsed_schema
-            .conversion_factor(&parsed_component)
-            .map_err(|e| RSCMError::UnitParseError {
-                variable: variable.to_string(),
-                unit_string: format!("{schema_unit} -> {component_unit}"),
-                details: e.to_string(),
-            })?;
-
-        Ok(Some(UnitConversionInfo {
-            variable: variable.to_string(),
-            component: component.to_string(),
-            factor,
-            source_unit: schema_unit.to_string(),
-            target_unit: component_unit.to_string(),
-        }))
-    }
-
     /// Interpolate prescribed data onto the model's time axis in the unit the model stores it in.
     ///
     /// Returns an error if the data's unit cannot be converted into `unit`.
@@ -774,7 +575,7 @@ impl ModelBuilder {
         time_axis: &Arc<TimeAxis>,
         warnings: &mut Vec<String>,
     ) -> RSCMResult<GridTimeseries<FloatValue, G>> {
-        let conversion = Self::check_unit_compatibility(name, "prescribed data", ts.unit(), unit)?;
+        let factor = crate::units::factor(name, ts.unit(), unit)?;
         let data_axis = ts.time_axis();
         let (start, end) = (*data_axis.first(), *data_axis.last());
         let times = time_axis.values();
@@ -793,8 +594,8 @@ impl ModelBuilder {
             ));
         }
         let ts = ts.to_owned().interpolate_into(time_axis.clone());
-        Ok(match conversion {
-            Some(conversion) => ts.convert_unit(conversion.factor, unit.to_string()),
+        Ok(match factor {
+            Some(factor) => ts.convert_unit(factor, unit.to_string()),
             None => ts,
         })
     }
@@ -829,12 +630,8 @@ impl ModelBuilder {
         let mut graph: CGraph = Graph::new();
         let mut modelled: HashMap<String, NodeIndex> = HashMap::new();
         let mut prescribed: HashSet<String> = HashSet::new();
-        let mut definitions: HashMap<String, ResolvedVariable> = HashMap::new();
         // Track which component owns each variable for better error messages
         let mut variable_owners: HashMap<String, String> = HashMap::new();
-        // Collect unit conversion factors needed at runtime
-        // Key: (variable_name, component_name) -> conversion info
-        let mut unit_conversions: Vec<UnitConversionInfo> = Vec::new();
         // Track variable sources keyed by (variable_name, component_name)
         // This enables different components to have different source classifications
         // for the same variable (e.g., State for owner, Upstream for consumers)
@@ -886,38 +683,12 @@ impl ModelBuilder {
             }
         }
 
-        // Producers define each variable first, so consumers get the unit conversions.
-        for (index, (_, provides)) in component_defs.iter().enumerate() {
-            for def in provides {
-                if let Some(conversion) = verify_definition(
-                    &mut definitions,
-                    def,
-                    &names[index],
-                    Some(&names[index]),
-                    self.schema.is_some(),
-                )? {
-                    unit_conversions.push(conversion);
-                }
-            }
-        }
-
         for (index, (requires, _)) in component_defs.iter().enumerate() {
             let node = nodes[index];
             let component_name = &names[index];
             let mut has_dependencies = false;
 
             for def in requires {
-                let existing_owner = variable_owners.get(&def.name).map(|s| s.as_str());
-                if let Some(conversion) = verify_definition(
-                    &mut definitions,
-                    def,
-                    component_name,
-                    existing_owner,
-                    self.schema.is_some(),
-                )? {
-                    unit_conversions.push(conversion);
-                }
-
                 let name = &def.name;
                 let lagged = self.is_lagged(name, component_name);
                 let producer = modelled.get(name).copied();
@@ -949,68 +720,29 @@ impl ModelBuilder {
             }
         }
 
-        // Collect all required grid transformations
-        let mut all_transformations: Vec<RequiredTransformation> = Vec::new();
-
-        // Validate against schema if provided
         if let Some(schema) = &self.schema {
-            // First validate the schema itself
             schema.validate()?;
-            // The store holds the schema's unit, so producer-relative factors do not apply.
-            unit_conversions.clear();
+            // A schema variable no component reads or produces is still stored, empty or prescribed.
+            prescribed.extend(
+                schema
+                    .variables
+                    .keys()
+                    .filter(|name| !modelled.contains_key(*name))
+                    .cloned(),
+            );
+        }
+        let Storage {
+            mut definitions,
+            read_conversions,
+            transformations,
+        } = resolve_storage(
+            self.schema.as_ref(),
+            names,
+            &component_defs,
+            &self.prescribed_variables,
+        )?;
 
-            // Validate each component against the schema and collect transformations
-            for (component_name, (requires, provides)) in names.iter().zip(&component_defs) {
-                let (component_transforms, component_unit_conversions) = self
-                    .validate_component_against_schema(
-                        schema,
-                        component_name,
-                        requires,
-                        provides,
-                        &modelled,
-                    )?;
-                all_transformations.extend(component_transforms);
-                unit_conversions.extend(component_unit_conversions);
-            }
-
-            // Handle schema variables (4.5)
-            // For variables only declared as inputs (not produced by any component),
-            // add them to definitions using the schema's grid type.
-            // For variables that are produced by components, update the grid type
-            // to match the schema (the schema is the source of truth for storage grid type).
-            for (name, var_def) in &schema.variables {
-                if !definitions.contains_key(name) {
-                    // No component produces this variable, so it is prescribed
-                    let parsed_unit = Unit::parse(&var_def.unit).ok();
-                    definitions.insert(
-                        name.clone(),
-                        ResolvedVariable {
-                            name: name.clone(),
-                            unit: var_def.unit.clone(),
-                            parsed_unit,
-                            grid: var_def.grid,
-                            role: VariableRole::Input, // Schema-only variables are inputs
-                            timeseries_type: TimeseriesType::from_unit(&var_def.unit),
-                        },
-                    );
-                    // Mark as prescribed since it's not produced by any component
-                    prescribed.insert(name.clone());
-                } else {
-                    // Variable exists (from component input declaration) - update grid type to match schema
-                    // This ensures storage uses schema's grid type, and read transforms will handle conversion
-                    if let Some(def) = definitions.get_mut(name) {
-                        if def.grid != var_def.grid {
-                            // Update storage grid type to match schema
-                            // Read/write transforms handle conversion between component and schema grid types
-                            def.grid = var_def.grid;
-                            if !modelled.contains_key(name) {
-                                prescribed.insert(name.clone());
-                            }
-                        }
-                    }
-                }
-            }
-
+        if let Some(schema) = &self.schema {
             // Add a component for each aggregate definition
             // Process aggregates in topological order to handle chained aggregates
             let ordered_aggregates = schema.topological_order_aggregates();
@@ -1059,20 +791,6 @@ impl ModelBuilder {
 
                 // Register the aggregate output as modelled
                 modelled.insert(agg_name.clone(), agg_node);
-
-                // Add aggregate variable to definitions
-                let parsed_unit = Unit::parse(&agg_def.unit).ok();
-                definitions.insert(
-                    agg_name.clone(),
-                    ResolvedVariable {
-                        name: agg_name.clone(),
-                        unit: agg_def.unit.clone(),
-                        parsed_unit,
-                        grid: agg_def.grid,
-                        role: VariableRole::Output, // Aggregates are outputs
-                        timeseries_type: TimeseriesType::from_unit(&agg_def.unit),
-                    },
-                );
             }
 
             // Resolve pending aggregate dependencies now that aggregate components are in the graph
@@ -1127,7 +845,7 @@ impl ModelBuilder {
         let mut read_transforms: HashMap<String, RequiredTransformation> = HashMap::new();
         let mut write_transforms: HashMap<String, RequiredTransformation> = HashMap::new();
 
-        for transform in all_transformations {
+        for transform in transformations {
             match transform.direction {
                 TransformDirection::Read => {
                     read_transforms.insert(transform.variable.clone(), transform);
@@ -1150,11 +868,7 @@ impl ModelBuilder {
                 TimeseriesType::Average => InterpolationStrategy::from(PreviousStrategy::new(true)),
             };
 
-            // Determine storage grid type: write transforms override the definition
-            let storage_grid = write_transforms
-                .get(&name)
-                .map(|t| t.target_grid)
-                .unwrap_or(definition.grid);
+            let storage_grid = definition.grid;
 
             // Try to populate from: (1) prescribed data, (2) initial value, (3) empty
             let prescribed_data = if prescribed.contains(&name) {
@@ -1162,9 +876,7 @@ impl ModelBuilder {
             } else {
                 None
             };
-            // With a schema, the store holds each variable in the schema's unit.
-            let schema_unit = self.schema.as_ref().and_then(|s| s.get_unit(&name));
-            let storage_unit = schema_unit.unwrap_or(&definition.unit);
+            let storage_unit = definition.unit.as_str();
             let initial = self
                 .initial_values
                 .get(&name)
@@ -1244,7 +956,7 @@ impl ModelBuilder {
 
         // Build unit conversion map from collected conversion info
         // Key: (variable_name, component_name) -> conversion factor
-        let unit_conversion_map: HashMap<(String, String), f64> = unit_conversions
+        let unit_conversion_map: HashMap<(String, String), f64> = read_conversions
             .into_iter()
             .map(|info| ((info.variable.clone(), info.component.clone()), info.factor))
             .collect();

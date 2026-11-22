@@ -302,26 +302,28 @@ class TestSchemaModelIntegration:
         # but the final value should be correct
         assert not np.isnan(erf_ts.values()[-1])
 
-    def test_schema_undefined_output_fails(self, time_axis, concentration_ts):
-        """Test that building fails if component output is not in schema."""
+    def test_output_missing_from_the_schema_uses_its_declared_unit(
+        self, time_axis, concentration_ts
+    ):
+        """An output the schema omits is stored as its producer declares it."""
         schema = VariableSchema()
         schema.add_variable("Atmospheric Concentrations|CO2", "ppm")
-        # Note: Effective Radiative Forcing|Test is NOT in the schema
-        schema.validate()
 
-        component = PythonComponent(ERFComponent())
-
-        with pytest.raises(ValueError, match="not defined in the schema"):
-            (
-                ModelBuilder()
-                .with_time_axis(time_axis)
-                .with_schema(schema)
-                .with_component(component)
-                .with_prescribed_variable(
-                    "Atmospheric Concentrations|CO2", concentration_ts
-                )
-                .build()
+        model = (
+            ModelBuilder()
+            .with_time_axis(time_axis)
+            .with_schema(schema)
+            .with_component(PythonComponent(ERFComponent()))
+            .with_prescribed_variable(
+                "Atmospheric Concentrations|CO2", concentration_ts
             )
+            .build()
+        )
+
+        erf = model.timeseries().get_timeseries_by_name(
+            "Effective Radiative Forcing|Test"
+        )
+        assert erf.unit == "W/m^2"
 
     def test_model_with_aggregate(self, time_axis):
         """Test model execution with a Sum aggregate."""
@@ -539,7 +541,7 @@ class TestGridAutoAggregation:
 
         # Should fail during build - broadcast is not supported
         with pytest.raises(
-            ValueError, match="cannot transform from scalar to four_box"
+            ValueError, match="FourBoxReader reads it on the four_box grid"
         ):
             (
                 ModelBuilder()
