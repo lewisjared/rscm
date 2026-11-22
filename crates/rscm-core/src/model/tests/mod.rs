@@ -32,6 +32,8 @@ mod relaxed_grid_validation;
 #[cfg(test)]
 mod schema_validation;
 #[cfg(test)]
+mod step_plan;
+#[cfg(test)]
 mod storage_rule;
 #[cfg(test)]
 mod timeseries_types;

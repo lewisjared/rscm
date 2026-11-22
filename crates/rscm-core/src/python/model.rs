@@ -285,7 +285,8 @@ impl PyModel {
     /// Report the model's coupling.
     ///
     /// Lists components in the order the runtime steps them, every edge between them
-    /// with whether it lags, and each variable's unit, grid, source and timeseries type.
+    /// with whether it lags, each variable's unit, grid, source and timeseries type,
+    /// and the unit and grid conversions of each read and write, with the component's label.
     ///
     /// Parameters
     /// ----------

@@ -374,9 +374,19 @@ fn coupling_reports_the_direction_and_units_of_each_conversion() {
     let conversions: Vec<_> = model
         .coupling()
         .unwrap()
-        .unit_conversions
+        .conversions
         .into_iter()
-        .map(|c| (c.variable, c.component, c.direction, c.from, c.to, c.factor))
+        .map(|c| {
+            let unit = c.unit.unwrap();
+            (
+                c.variable,
+                c.component,
+                c.direction,
+                unit.from,
+                unit.to,
+                unit.factor,
+            )
+        })
         .collect();
     let row = |v: &str, c: &str, d: TransformDirection, from: &str, to: &str, f: f64| {
         (v.into(), c.into(), d, from.into(), to.into(), f)
