@@ -27,6 +27,7 @@ use crate::timeseries::FloatValue;
 /// assert_eq!(slice.get(FourBoxRegion::NorthernOcean), 15.0);
 /// ```
 #[repr(transparent)]
+#[rscm_core::params]
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FourBoxSlice(pub [FloatValue; 4]);
 
@@ -137,6 +138,7 @@ impl std::ops::IndexMut<FourBoxRegion> for FourBoxSlice {
 ///
 /// Similar to `FourBoxSlice` but for the two-region hemispheric grid.
 #[repr(transparent)]
+#[rscm_core::params]
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct HemisphericSlice(pub [FloatValue; 2]);
 

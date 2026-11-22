@@ -89,14 +89,6 @@ pub fn depythonize<T: DeserializeOwned>(value: &Bound<'_, PyAny>) -> PyResult<T>
 /// A float field reads any type, but `pythonize` only reads the built-in numbers there.
 pub fn plain_numbers<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     let py = value.py();
-    if value.is_none()
-        || value.is_instance_of::<PyBool>()
-        || value.is_instance_of::<PyInt>()
-        || value.is_instance_of::<PyFloat>()
-        || value.is_instance_of::<PyString>()
-    {
-        return Ok(value.clone());
-    }
     if let Ok(mapping) = value.cast::<PyMapping>() {
         let plain = PyDict::new(py);
         for item in mapping.items()?.iter() {
@@ -119,16 +111,32 @@ pub fn plain_numbers<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAn
             .collect::<PyResult<Vec<_>>>()?;
         return Ok(PyTuple::new(py, items)?.into_any());
     }
-    if value.hasattr("tolist")? {
+    if is_builtin_scalar(value) {
+        return Ok(value.clone());
+    }
+    // A NumPy array becomes a list, but a scalar such as a longdouble can stay a NumPy scalar.
+    let ndim = value
+        .getattr("ndim")
+        .and_then(|n| n.extract::<usize>())
+        .unwrap_or(0);
+    if ndim > 0 && value.hasattr("tolist")? {
         return plain_numbers(&value.call_method0("tolist")?);
     }
-    if value.hasattr("__index__")? {
-        return value.call_method0("__index__");
+    if let Ok(index) = value.call_method0("__index__") {
+        return Ok(index);
     }
     if value.hasattr("__float__")? {
         return value.call_method0("__float__");
     }
     Ok(value.clone())
+}
+
+fn is_builtin_scalar(value: &Bound<'_, PyAny>) -> bool {
+    value.is_none()
+        || value.is_instance_of::<PyBool>()
+        || value.is_instance_of::<PyInt>()
+        || value.is_instance_of::<PyFloat>()
+        || value.is_instance_of::<PyString>()
 }
 
 /// Whether deserialising `T` fails without `field`.

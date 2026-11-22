@@ -764,6 +764,32 @@ mod tests {
     use crate::timeseries_collection::TimeseriesData;
 
     #[test]
+    fn regional_state_values_keep_non_finite_floats() {
+        let values = [
+            StateValue::FourBox(FourBoxSlice::from_array([
+                FloatValue::NAN,
+                FloatValue::INFINITY,
+                FloatValue::NEG_INFINITY,
+                1.0,
+            ])),
+            StateValue::Hemispheric(HemisphericSlice::from_array([
+                FloatValue::INFINITY,
+                FloatValue::NEG_INFINITY,
+            ])),
+        ];
+        for value in values {
+            let json = serde_json::to_string(&value).unwrap();
+            assert!(json.contains("\"inf\""), "{json}");
+            let read: StateValue = serde_json::from_str(&json).unwrap();
+            assert_eq!(
+                serde_json::to_string(&read).unwrap(),
+                json,
+                "{value:?} did not round-trip"
+            );
+        }
+    }
+
+    #[test]
     fn test_state_value_scalar() {
         let sv = StateValue::Scalar(42.0);
         assert!(sv.is_scalar());
