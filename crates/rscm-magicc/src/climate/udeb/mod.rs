@@ -938,7 +938,7 @@ impl Component for ClimateUDEB {
         for hemisphere in &state.ocean_temperatures {
             check_state_len("ocean layers", n_layers, hemisphere.len())?;
         }
-        for profile in state.initial_ocean_profile.iter().filter(|p| !p.is_empty()) {
+        for profile in &state.initial_ocean_profile {
             check_state_len("initial profile layers", n_layers, profile.len())?;
         }
         Ok(())
@@ -1003,6 +1003,13 @@ mod tests {
             "the parameters give 40 ocean layers but the state has 50"
         );
         assert!(fewer.check_state(&ClimateUDEBState::default()).is_ok());
+        let mut no_profile = default_state(&component);
+        no_profile.initial_ocean_profile[1].clear();
+        let err = component.check_state(&no_profile).unwrap_err().to_string();
+        assert_eq!(
+            err,
+            "the parameters give 50 initial profile layers but the state has 0"
+        );
     }
 
     #[test]
