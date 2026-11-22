@@ -20,6 +20,8 @@ mod lags;
 #[cfg(test)]
 mod missing_prescribed;
 #[cfg(test)]
+mod output_staging;
+#[cfg(test)]
 mod parallel;
 #[cfg(test)]
 mod read_side_integration;

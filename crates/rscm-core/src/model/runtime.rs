@@ -137,6 +137,17 @@ struct ComponentPlan {
     outputs: OutputBuffer,
     /// Target of each declared output, aligned with `outputs`.
     targets: Vec<Option<OutputTarget>>,
+    /// Converted outputs of the current step, written only once all of them are valid.
+    staged: Vec<StagedOutput>,
+}
+
+/// An output converted to its stored unit and grid, with the position it came from.
+#[derive(Debug)]
+struct StagedOutput {
+    position: usize,
+    index: usize,
+    at: usize,
+    value: StateValue,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -366,6 +377,11 @@ impl Model {
         &self.write_transforms
     }
 
+    #[cfg(test)]
+    pub(crate) fn write_transforms_mut(&mut self) -> &mut HashMap<String, RequiredTransformation> {
+        &mut self.write_transforms
+    }
+
     /// Get unit conversions.
     ///
     /// Returns the unit conversion factors keyed by (variable_name, component_name).
@@ -466,6 +482,7 @@ impl Model {
             },
             outputs,
             targets,
+            staged: Vec::new(),
         }
     }
 
@@ -551,6 +568,7 @@ impl Model {
             .get_mut(&plan.node)
             .expect("Component state not initialised, a bug in Model::build()");
 
+        plan.outputs.clear();
         component
             .solve_into(
                 start,
@@ -566,72 +584,114 @@ impl Model {
                 )),
             })?;
 
+        let undeclared = plan.outputs.take_undeclared();
+        if !undeclared.is_empty() {
+            let names: Vec<&str> = undeclared.iter().map(|(name, _)| name.as_str()).collect();
+            return Err(RSCMError::Error(format!(
+                "{component_name} returned undeclared output {} during {start}..{end}",
+                names.join(", ")
+            )));
+        }
+
+        plan.staged.clear();
         for position in 0..plan.targets.len() {
             if let Some(value) = plan.outputs.take(position) {
                 let key = &plan.outputs.names()[position];
-                self.write_output(&plan.name, key, plan.targets[position], &value)?;
+                let staged = self.stage_output(
+                    component_name,
+                    position,
+                    key,
+                    plan.targets[position],
+                    value,
+                )?;
+                plan.staged.push(staged);
             }
         }
-        for (key, value) in plan.outputs.take_undeclared() {
-            let target = self.output_target(&key, None);
-            self.write_output(&plan.name, &key, target, &value)?;
+        for staged in plan.staged.drain(..) {
+            let key = &plan.outputs.names()[staged.position];
+            let data = self.collection.data_mut(staged.index);
+            match &staged.value {
+                StateValue::Scalar(v) => data.set_scalar(key, staged.at, *v),
+                StateValue::FourBox(slice) => data.set_four_box(key, staged.at, slice),
+                StateValue::Hemispheric(slice) => data.set_hemispheric(key, staged.at, slice),
+            }
+            .expect("grid checked while staging");
         }
         Ok(())
     }
 
-    /// Store a component's output `key` for the current step.
-    fn write_output(
-        &mut self,
+    fn grid_mismatch(
+        &self,
         component_name: &str,
         key: &str,
+        expected: GridType,
+        actual: GridType,
+    ) -> RSCMError {
+        let (start, end) = self.current_time_bounds();
+        let err = RSCMError::GridOutputMismatch {
+            variable: key.to_string(),
+            expected_grid: format!("{expected:?}"),
+            component_grid: format!("{actual:?}"),
+        };
+        RSCMError::Error(format!(
+            "{component_name} could not write {key} during {start}..{end}: {err}"
+        ))
+    }
+
+    /// A component's output `key` converted to the unit and grid it is stored in.
+    fn stage_output(
+        &self,
+        component_name: &str,
+        position: usize,
+        key: &str,
         target: Option<OutputTarget>,
-        state_value: &StateValue,
-    ) -> RSCMResult<()> {
+        value: StateValue,
+    ) -> RSCMResult<StagedOutput> {
         let (start, end) = self.current_time_bounds();
         let target = target.ok_or_else(|| {
             RSCMError::Error(format!(
-                "{component_name} returned undeclared output {key} during {start}..{end}"
+                "{component_name} output {key} has no stored timeseries during {start}..{end}"
             ))
         })?;
-        let converted;
-        let state_value = if (target.unit_factor - 1.0).abs() > FloatValue::EPSILON {
-            converted = scale_state_value(state_value, target.unit_factor);
-            &converted
+        let expected_grid = target.transform.map_or_else(
+            || self.collection.items()[target.index].data.grid(),
+            |(source_grid, _)| source_grid,
+        );
+        if value.grid() != expected_grid {
+            return Err(self.grid_mismatch(component_name, key, expected_grid, value.grid()));
+        }
+        let value = if (target.unit_factor - 1.0).abs() > FloatValue::EPSILON {
+            scale_state_value(&value, target.unit_factor)
         } else {
-            state_value
+            value
         };
-        let aggregated;
-        let final_value = match target.transform {
-            Some((source_grid, target_grid)) => {
-                aggregated = aggregate_state_value(
-                    state_value,
-                    source_grid,
-                    target_grid,
-                    self.grid_weights.get(&source_grid),
-                )
-                .map_err(|err| {
-                    RSCMError::Error(format!(
-                        "{component_name} could not aggregate {key} during {start}..{end}: {err}"
-                    ))
-                })?;
-                &aggregated
-            }
-            None => state_value,
+        let value = match target.transform {
+            Some((source_grid, target_grid)) => aggregate_state_value(
+                &value,
+                source_grid,
+                target_grid,
+                self.grid_weights.get(&source_grid),
+            )
+            .map_err(|err| {
+                RSCMError::Error(format!(
+                    "{component_name} could not aggregate {key} during {start}..{end}: {err}"
+                ))
+            })?,
+            None => value,
         };
+        let stored_grid = self.collection.items()[target.index].data.grid();
+        if value.grid() != stored_grid {
+            return Err(self.grid_mismatch(component_name, key, stored_grid, value.grid()));
+        }
         let at = match target.timeseries_type {
             TimeseriesType::Point => self.time_index + 1,
             TimeseriesType::Average => self.time_index,
         };
-        let data = self.collection.data_mut(target.index);
-        let result = match final_value {
-            StateValue::Scalar(v) => data.set_scalar(key, at, *v),
-            StateValue::FourBox(slice) => data.set_four_box(key, at, slice),
-            StateValue::Hemispheric(slice) => data.set_hemispheric(key, at, slice),
-        };
-        result.map_err(|err| {
-            RSCMError::Error(format!(
-                "{component_name} could not write {key} during {start}..{end}: {err}"
-            ))
+        Ok(StagedOutput {
+            position,
+            index: target.index,
+            at,
+            value,
         })
     }
 
