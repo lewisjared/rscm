@@ -1,3 +1,11 @@
+## rscm 0.9.1 (2026-11-22)
+
+### Bug Fixes
+
+- Built Apple Silicon wheels on a supported macOS runner, so releases publish to PyPI again.
+  PyPI had stopped at 0.6.1 because the wheel job was cancelled on every release since 0.7.0. ([#241](https://github.com/lewisjared/rscm/pull/241))
+
+
 ## rscm 0.9.0 (2026-11-22)
 
 ### ⚠️ Breaking Changes ⚠️
