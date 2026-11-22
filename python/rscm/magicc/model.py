@@ -29,7 +29,7 @@ into it.
 from __future__ import annotations
 
 import difflib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
@@ -42,6 +42,7 @@ from rscm._lib.magicc import (
     GHGForcingBuilder,
     HalocarbonChemistryBuilder,
     N2OChemistryBuilder,
+    NitrateCloudForcingBuilder,
     OceanCarbonBuilder,
     OzoneForcingBuilder,
     PermafrostBuilder,
@@ -64,8 +65,10 @@ from rscm.names import (
     ATMOSPHERIC_CONCENTRATIONS_CO2,
     EFFICACY_ADJUSTED_ERF,
     EQUILIBRIUM_CLIMATE_SENSITIVITY,
+    ERF_AEROSOLS_DIRECT_EFFECT,
     ERF_F_GASES,
     SURFACE_AIR_TEMPERATURE_CHANGE,
+    child,
 )
 from rscm.spec import ComponentSpec, Lag, ModelSetup, ModelSpec
 from rscm.validation import InputValidationError, Issue, IssueKind, Validator
@@ -90,6 +93,7 @@ __all__ = [
     "component_specs",
     "setup",
     "with_lags",
+    "with_nitrate_pattern",
 ]
 
 ModelConfig = dict[str, Any]
@@ -105,6 +109,7 @@ BUILDERS: dict[str, Any] = {
     "CO2Budget": CO2BudgetBuilder,
     "GHGForcing": GHGForcingBuilder,
     "OzoneForcing": OzoneForcingBuilder,
+    "NitrateCloudForcing": NitrateCloudForcingBuilder,
     "ForcingAggregation": ForcingAggregationBuilder,
     "ClimateUDEB": ClimateUDEBBuilder,
     "SeaLevelRise": SeaLevelRiseBuilder,
@@ -307,6 +312,44 @@ def component_specs(
     }
 
 
+NITRATE_FOSSIL = child(child(ERF_AEROSOLS_DIRECT_EFFECT, "NO3"), "Fossil")
+
+
+def with_nitrate_pattern(
+    config: ModelConfig,
+    prescribed: Mapping[str, tuple[ArrayLike, str]],
+    time: Sequence[float],
+) -> ModelConfig:
+    """``config`` with the nitrate agent's pattern from `NitrateCloudForcing`.
+
+    MAGICC7 takes it from nitrate forcing in ``nitrate.efficacy_pattern_year``,
+    and without that year the agent keeps its pattern.
+    ``prescribed`` holds the component's inputs on ``time``,
+    and without them the agent keeps its pattern too.
+    """
+    nitrate = config["components"].get("NitrateCloudForcing") or {}
+    year = nitrate.get("nitrate", {}).get("efficacy_pattern_year")
+    if year is None:
+        return config
+    builder = NitrateCloudForcingBuilder.from_parameters(cast("Any", nitrate))
+    definitions = builder.build().definitions()
+    names = [d.name for d in definitions if d.role == VariableRole.Input]
+    if not all(name in prescribed for name in names):
+        return config
+    inputs = {name: np.asarray(prescribed[name][0], dtype=np.float64) for name in names}
+    pattern = list(builder.nitrate_pattern(inputs, list(time), float(year)))
+    aggregation = config["components"]["ForcingAggregation"]
+    agents = [
+        {**a, "regional_pattern": pattern} if a["variable"] == NITRATE_FOSSIL else a
+        for a in aggregation["agents"]
+    ]
+    components = {
+        **config["components"],
+        "ForcingAggregation": {**aggregation, "agents": agents},
+    }
+    return {**config, "components": components}
+
+
 def _initial_forcing(
     agents: Sequence[Mapping[str, Any]],
     first: Mapping[str, NDArray[np.float64]],
@@ -431,6 +474,7 @@ def setup(  # noqa: PLR0913
     v.raise_if_any()
     time = np.asarray(time_axis.values(), dtype=np.float64)
     prescribed = _on_axis(v, inputs, time)
+    config = with_nitrate_pattern(config, prescribed, list(time))
     specs = component_specs(config, required=required, optional=optional)
     components = {key: spec.build() for key, spec in specs.items()}
     _check_read(v, inputs, components.values())

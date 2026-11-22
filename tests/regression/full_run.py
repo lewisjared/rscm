@@ -27,6 +27,7 @@ from rscm.interop import REGIONS
 from rscm.magicc import (
     ForcingAggregationBuilder,
     HalocarbonChemistryBuilder,
+    NitrateCloudForcingBuilder,
     concentration_driven,
     emissions_driven,
     full,
@@ -272,8 +273,28 @@ PRESCRIBED = (*full.PRESCRIBED_AGENTS, *full.BIOMASS_AGENTS)
 Series = dict[str, "NDArray[np.float64]"]
 
 
+def _nitrate_cloud(run: FullRun) -> tuple[NitrateCloudForcingBuilder, dict[str, Any]]:
+    """NitrateCloudForcing of a run, and its inputs on the run's years."""
+    p = run.parameters
+    files = full.load_inputs(p)
+    builder = NitrateCloudForcingBuilder.from_parameters(
+        full.nitrate_cloud_parameters(p, files)
+    )
+    inputs = full.nitrate_cloud_inputs(run.years, magicc7_emissions(run), files)
+    return builder, {name: values for name, (values, _) in inputs.items()}
+
+
+def _nitrate_pattern(run: FullRun) -> list[float]:
+    builder, inputs = _nitrate_cloud(run)
+    year = float(run.parameters["rf_regions_normyear"])
+    return list(builder.nitrate_pattern(inputs, list(run.years), year))
+
+
 def _scaled(run: FullRun) -> tuple[Series, Series, dict[str, float]]:
-    """Unscaled prescribed ERF, its scaled boxes and each agent variable's scale."""
+    """Unscaled prescribed ERF, its scaled boxes and each agent variable's scale.
+
+    The boxes include the forcing `NitrateCloudForcing` calculates.
+    """
     p, y = run.parameters, run.years
     em = magicc7_emissions(run)
     unscaled = full.prescribed_forcing(y, em, p, full.load_inputs(p))
@@ -282,6 +303,9 @@ def _scaled(run: FullRun) -> tuple[Series, Series, dict[str, float]]:
     inputs = {f"{ERF}|{name}": np.asarray(v) for name, v in unscaled.items()}
     boxes = aggregation.variable_box_forcing(inputs, list(y))
     scales = aggregation.variable_scales(inputs, list(y))
+
+    builder, nitrate_cloud = _nitrate_cloud(run)
+    boxes |= builder.forcing(nitrate_cloud, list(y))
 
     def strip(name: str) -> str:
         return name.removeprefix(f"{ERF}|")
@@ -367,6 +391,11 @@ class Reported:
         patterns = ForcingAggregationBuilder.from_parameters(
             {"agents": agents}
         ).patterns(erf, list(run.years))
+        nitrate = f"{ERF}|{DIRECT}|NO3|Fossil"
+        patterns = [
+            _nitrate_pattern(run) if a["variable"] == nitrate else pattern
+            for a, pattern in zip(agents, patterns, strict=True)
+        ]
         fixed = [
             {
                 **{

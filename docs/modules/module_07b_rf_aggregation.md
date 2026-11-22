@@ -160,6 +160,8 @@ Notes on the table:
   In RSCM these agents list the summed variables in `pattern_terms`,
   and `ForcingAggregation` sums their scaled box forcing in `pattern_year`,
   so the patterns follow a scale changed on the configuration.
+  The model setup sets the nitrate pattern from `NitrateCloudForcing`
+  (`rscm.magicc.model.with_nitrate_pattern`).
 - **Scaling**: an agent's `scale` multiplies its ERF before the efficacy.
   With `harmonisation`, the scale is `target` over the change in the agent's global input
   from `preindustrial_reference_year` to `reference_year`, as `RF_*_APPLY = 1` sets in MAGICC7.

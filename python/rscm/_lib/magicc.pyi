@@ -992,6 +992,103 @@ class OzoneForcingBuilder(ComponentBuilder):
     def build(self) -> RustComponent:
         """Build the ozone forcing component."""
 
+class ForcingTarget(TypedDict):
+    """Global forcing that a forcing is scaled to in a year."""
+
+    target: float
+    """Global forcing in ``reference_year``, in W/m²."""
+    reference_year: float
+
+class CloudSpecies(TypedDict):
+    """A value for each species of the aerosol number index."""
+
+    nitrate: float
+    bc: float
+    oc: float
+    sox: float
+    sea_salt: float
+
+class NitrateParameters(TypedDict, total=False):
+    """Nitrate direct forcing (Hauglustaine et al. 2014)."""
+
+    natural_nox_emissions: float
+    natural_nh3_emissions: float
+    lambda_so2: float
+    burden_pi: float
+    optical_thickness_pi: float
+    burden_to_optical_thickness_exponent: float
+    regional_pattern: list[float]
+    efficacy_pattern_year: float | None
+    """Year whose forcing sets nitrate's pattern for its internal efficacy.
+
+    The model setup applies it to the ``ForcingAggregation`` nitrate agent.
+    """
+    scale: float
+    harmonisation: ForcingTarget | None
+    """Global forcing in a year that sets the factor instead of ``scale``."""
+
+class CloudAlbedoParameters(TypedDict, total=False):
+    """Cloud albedo forcing from a log-linear aerosol number index."""
+
+    weights: CloudSpecies
+    switch_years: CloudSpecies
+    """Years from which each species follows emissions, when its records end."""
+    bci_soluble_ratio: float
+    regional_pattern: list[float]
+    pattern_year: float
+    """Year in which the forcing equals ``regional_pattern``, before the factor."""
+    scale: float
+    harmonisation: ForcingTarget | None
+    """Global forcing in a year that sets the factor instead of ``scale``."""
+
+class NitrateCloudForcingParameters(TypedDict, total=False):
+    """Parameters for the nitrate and cloud albedo forcing component.
+
+    All fields optional - defaults provided by Rust.
+    """
+
+    nitrate: NitrateParameters
+    cloud_albedo: CloudAlbedoParameters
+    natural_sox_emissions: float
+    nh_land_fraction: float
+    sh_land_fraction: float
+
+@final
+class NitrateCloudForcingBuilder(ComponentBuilder):
+    """Builder for MAGICC7's nitrate direct and cloud albedo forcing.
+
+    Both are closed-form in emissions and optical thicknesses,
+    which it reads in reference years, so they must be prescribed.
+
+    Inputs, outputs and states are listed on the
+    [NitrateCloudForcing component page][component-magicc-nitratecloudforcing].
+    """
+
+    @staticmethod
+    def from_parameters(  # type: ignore[override]
+        parameters: NitrateCloudForcingParameters,
+    ) -> NitrateCloudForcingBuilder:
+        """Create a builder from a parameter dictionary."""
+    def forcing(
+        self, inputs: Mapping[str, NDArray[np.float64]], time: Sequence[float]
+    ) -> dict[str, NDArray[np.float64]]:
+        """Return the four-box forcing of each output in each year of ``time``.
+
+        ``inputs`` holds the prescribed series on ``time``.
+        """
+    def nitrate_pattern(
+        self,
+        inputs: Mapping[str, NDArray[np.float64]],
+        time: Sequence[float],
+        year: float,
+    ) -> tuple[float, float, float, float]:
+        """Return box nitrate forcing per unit global nitrate forcing in ``year``.
+
+        ``inputs`` holds the prescribed series on ``time``.
+        """
+    def build(self) -> RustComponent:
+        """Build the nitrate and cloud albedo forcing component."""
+
 class AerosolDirectParameters(TypedDict, total=False):
     """Parameters for direct aerosol forcing component.
 

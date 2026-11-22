@@ -22,7 +22,7 @@
 #
 # The result reproduces MAGICC7 v7.5.3 to floating-point rounding,
 # as [the comparison](#agreement-with-magicc7) checks,
-# and [the component graph](#the-component-graph) shows how the thirteen components connect.
+# and [the component graph](#the-component-graph) shows how the fourteen components connect.
 #
 # You will:
 #
@@ -80,6 +80,7 @@ from rscm.magicc import (
     GHGForcingBuilder,
     HalocarbonChemistryBuilder,
     N2OChemistryBuilder,
+    NitrateCloudForcingBuilder,
     OceanCarbonBuilder,
     OzoneForcingBuilder,
     PermafrostBuilder,
@@ -136,7 +137,8 @@ def reference_run(name):
 # | Carbon    | Permafrost                                   | `PermafrostBuilder`                          |
 # | Carbon    | Nitrogen limitation                          | `nitrogen` parameters of `TerrestrialCarbon` |
 # | Forcing   | Ozone                                        | `OzoneForcingBuilder`                        |
-# | Forcing   | Aerosols and other prescribed forcing        | `rscm.magicc.prescribed`                     |
+# | Forcing   | Nitrate and cloud albedo                     | `NitrateCloudForcingBuilder`                 |
+# | Forcing   | Other aerosols and prescribed forcing        | `rscm.magicc.prescribed`                     |
 # | Forcing   | GHG forcing                                  | `GHGForcingBuilder`                          |
 # | Forcing   | Forcing aggregation                          | `ForcingAggregationBuilder`                  |
 # | Climate   | Climate (UDEB)                               | `ClimateUDEBBuilder`                         |
@@ -148,6 +150,8 @@ def reference_run(name):
 # MAGICC7 calculates aerosol, land-use, solar and volcanic forcing from input files and emissions
 # before the run starts.
 # `rscm.magicc.prescribed` does the same, and the results enter the model as prescribed inputs.
+# `NitrateCloudForcing` calculates nitrate and cloud albedo forcing in the run instead,
+# from prescribed emissions and optical thicknesses.
 # `AerosolDirectBuilder` and `AerosolIndirectBuilder` are simpler stand-ins and are not part of this chain.
 #
 # The [module status table](../../modules/#rscm-implementation-status)
@@ -247,17 +251,23 @@ for key in (
 # historical aerosol forcing patterns and optical thickness, land-use albedo forcing,
 # and solar and monthly volcanic forcing.
 # `full.prescribed_forcing` extends the historical patterns with the emissions,
-# as MAGICC7 does, and returns the ERF of thirteen agents, four-box apart from mineral dust.
+# as MAGICC7 does, and returns the ERF of ten agents, four-box apart from mineral dust.
 # The direct aerosol, dust, land-use and BC on snow ERF is unscaled,
 # because `ForcingAggregation` applies MAGICC7's factors and harmonisation.
 # `variable_box_forcing` shows the scaled boxes,
 # whose global mean is their area-weighted mean.
+# `NitrateCloudForcingBuilder.forcing` gives the nitrate and cloud albedo forcing
+# that the component writes in the run.
 
 # %%
 ERF = "Effective Radiative Forcing"
 area = np.array(pr.area_fractions())
 inputs = full.load_inputs(parameters)
 prescribed = full.prescribed_forcing(years, emissions, parameters, inputs)
+nitrate_cloud_inputs = full.nitrate_cloud_inputs(years, emissions, inputs)
+nitrate_cloud = NitrateCloudForcingBuilder.from_parameters(
+    full.nitrate_cloud_parameters(parameters, inputs)
+)
 scaled = {
     name.removeprefix(f"{ERF}|"): boxes
     for name, boxes in ForcingAggregationBuilder.from_parameters(
@@ -268,10 +278,17 @@ scaled = {
     )
     .items()
 }
+scaled |= {
+    name.removeprefix(f"{ERF}|"): boxes
+    for name, boxes in nitrate_cloud.forcing(
+        {name: values for name, (values, _) in nitrate_cloud_inputs.items()},
+        list(years),
+    ).items()
+}
 
 # %% tags=["remove_input"]
 groups = {
-    "Aerosol direct": [name for name in prescribed if name.startswith(full.DIRECT)],
+    "Aerosol direct": [name for name in scaled if name.startswith(full.DIRECT)],
     "Aerosol indirect": ["Aerosols|Indirect Effect"],
     "Land-use change and black carbon on snow": [
         "Land-use Change",
@@ -284,7 +301,7 @@ for label, names in groups.items():
     ax.plot(years, sum(scaled[name] for name in names) @ area, label=label)
 ax.axhline(0, color="grey", linewidth=0.5)
 ax.set_ylabel("W/m^2")
-ax.set_title("Prescribed forcing, global mean")
+ax.set_title("Aerosol, land-use and solar forcing, global mean")
 ax.legend()
 plt.show()
 
@@ -329,6 +346,14 @@ climate = ClimateUDEBBuilder.from_parameters(climate_parameters)
 
 # %%
 agents = full.forcing_agents(p, years, prescribed, emissions)
+nitrate_pattern = nitrate_cloud.nitrate_pattern(
+    {name: values for name, (values, _) in nitrate_cloud_inputs.items()},
+    list(years),
+    p["rf_regions_normyear"],
+)
+for agent in agents:
+    if agent["variable"] == f"{ERF}|{full.DIRECT}|NO3|Fossil":
+        agent["regional_pattern"] = list(nitrate_pattern)
 
 
 def with_prefix(terms):
@@ -424,6 +449,7 @@ builders |= {
         }
     ),
     "OzoneForcing": OzoneForcingBuilder.from_parameters(full.ozone_parameters(p)),
+    "NitrateCloudForcing": nitrate_cloud,
     "ForcingAggregation": aggregation,
     "ClimateUDEB": climate,
     "SeaLevelRise": SeaLevelRiseBuilder.from_parameters({}),
@@ -537,7 +563,9 @@ lagged = lagged_couplings(components)
 #
 # Inputs that no component produces come from prescribed timeseries.
 # The emissions are scalar, with a few totals and renamings the components expect.
-# The prescribed forcing is four-box.
+# The optical thicknesses that `NitrateCloudForcing` reads are four-box,
+# like the prescribed forcing.
+# The prescribed forcing is four-box, apart from mineral dust.
 
 # %%
 prescribed_emissions = {
@@ -557,6 +585,10 @@ prescribed_emissions = {
         f"Emissions|{s}": (emissions[s], emissions_unit(f"Emissions|{s}"))
         for s in halocarbon_species
     },
+    **{k: v for k, v in nitrate_cloud_inputs.items() if k.startswith("Emissions|")},
+}
+optical_thickness = {
+    k: v for k, v in nitrate_cloud_inputs.items() if not k.startswith("Emissions|")
 }
 prescribed_erf = {f"{ERF}|{name}": values for name, values in prescribed.items()}
 four_box_erf = {name for name, values in prescribed_erf.items() if values.ndim == 2}
@@ -577,6 +609,9 @@ grids = {
 grids |= {
     name: (unit, GridType.Scalar) for name, (_, unit) in prescribed_emissions.items()
 }
+grids |= {
+    name: (unit, GridType.FourBox) for name, (_, unit) in optical_thickness.items()
+}
 for component in components.values():
     for d in component.definitions():
         _, grid = grids.get(d.name, (d.unit, d.grid))
@@ -590,7 +625,7 @@ for name, (unit, grid) in grids.items():
 n_four_box_variables = sum(g == GridType.FourBox for _, g in grids.values())
 print(
     f"{len(prescribed_emissions) + len(prescribed_erf) - len(four_box_erf)} scalar"
-    f" and {len(four_box_erf)} four-box prescribed inputs"
+    f" and {len(four_box_erf) + len(optical_thickness)} four-box prescribed inputs"
 )
 print(f"{len(grids)} variables, {n_four_box_variables} on four boxes")
 
@@ -679,6 +714,13 @@ def build_model(n_years, initial_agents, builders):
         builder.with_prescribed_variable(
             name, Timeseries(values[:n_years], axis, unit, InterpolationStrategy.Linear)
         )
+    for name, (values, unit) in optical_thickness.items():
+        builder.with_prescribed_variable(
+            name,
+            FourBoxTimeseries(
+                values[:n_years], axis, unit, InterpolationStrategy.Linear
+            ),
+        )
     for name, values in prescribed_erf.items():
         series = FourBoxTimeseries if name in four_box_erf else Timeseries
         builder.with_prescribed_variable(
@@ -730,7 +772,12 @@ model = build_model(len(years), initial_agents, builders)
 DOMAINS = {
     "#c8e6c9": ["CH4Chemistry", "CH4Oxidation", "N2OChemistry", "HalocarbonChemistry"],
     "#bbdefb": ["Permafrost", "TerrestrialCarbon", "OceanCarbon", "CO2Budget"],
-    "#ffe0b2": ["GHGForcing", "OzoneForcing", "ForcingAggregation"],
+    "#ffe0b2": [
+        "GHGForcing",
+        "OzoneForcing",
+        "NitrateCloudForcing",
+        "ForcingAggregation",
+    ],
     "#f8bbd0": ["ClimateUDEB", "SeaLevelRise"],
 }
 COLOURS = {name: colour for colour, names in DOMAINS.items() for name in names}

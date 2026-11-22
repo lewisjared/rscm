@@ -27,6 +27,8 @@ names! {
     CUMULATIVE_EMISSIONS = "Cumulative Emissions";
     /// Quantity segment of atmospheric concentrations.
     ATMOSPHERIC_CONCENTRATIONS = "Atmospheric Concentrations";
+    /// Quantity segment of the optical thickness of an aerosol species.
+    OPTICAL_THICKNESS = "Optical Thickness";
     /// Total effective radiative forcing, and the parent of each agent's forcing.
     ERF = "Effective Radiative Forcing";
 

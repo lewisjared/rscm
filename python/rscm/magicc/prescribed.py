@@ -14,17 +14,13 @@ replace with the final year's own.
 
 from __future__ import annotations
 
-import functools
 import gzip
-import math
-import operator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
     from pathlib import Path
 
     from numpy.typing import ArrayLike, NDArray
@@ -33,12 +29,10 @@ __all__ = [
     "AerosolHistory",
     "area_fractions",
     "bc_on_snow",
-    "cloud_albedo",
     "direct_aerosol",
     "forward_midyear",
     "land_use",
     "mineral_dust",
-    "nitrate",
     "on_axis",
     "read_input",
     "volcanic_substeps",
@@ -210,253 +204,6 @@ def mineral_dust(
 ) -> NDArray[np.float64]:
     """Unscaled global mineral dust forcing, which follows global land-use forcing."""
     return area_mean(land_use(years, land_use_history, land_use_co2))
-
-
-def _nitrate_total(  # noqa: PLR0913
-    years: ArrayLike,
-    nox: tuple[ArrayLike, ArrayLike],
-    nh3: tuple[ArrayLike, ArrayLike],
-    sox: ArrayLike,
-    pattern: ArrayLike,
-    *,
-    harmonisation_target: float | None = None,
-    harmonisation_reference_year: float = 2019,
-    natural_nox: float = 10.0,
-    natural_nh3: float = 21.0,
-    natural_sox: float = 14.0,
-    lambda_so2: float = 1.6,
-    burden_pi: float = 0.0085,
-    optical_thickness_pi: float = 1.41,
-    burden_to_optical_thickness_exponent: float = 0.76,
-    factor: float | None = None,
-    shape_only: bool = False,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Total nitrate forcing boxes, before the source split, and its global value.
-
-    ``shape_only`` callers normalise the forcing, so a zero scale is replaced by one.
-    """
-    y = np.asarray(years, dtype=np.float64)
-    nox_i, nox_b = (np.asarray(e, dtype=np.float64) for e in nox)
-    nh3_i, nh3_b = (np.asarray(e, dtype=np.float64) for e in nh3)
-    n = ((nox_i + nox_b) + natural_nox) / 14.0
-    a = ((nh3_i + nh3_b) + natural_nh3) / 14.0
-    s = (np.asarray(sox, dtype=np.float64) + natural_sox) / 32.07
-    alpha = (n * a) / ((s * lambda_so2) / a + 1.0)
-    burden = (burden_pi * alpha) / alpha[0]
-    # math.pow matches MAGICC7's libm, unlike numpy's vectorised power.
-    optical_thickness = np.array(
-        [math.pow(b / burden_pi, burden_to_optical_thickness_exponent) for b in burden]
-    )
-    rf = optical_thickness * optical_thickness_pi - optical_thickness_pi
-    if factor is None:
-        reference = rf[_switch_index(y, harmonisation_reference_year)]
-        factor = _scale(harmonisation_target, None, reference)
-    if shape_only and factor == 0:
-        factor = 1.0
-    rf = rf * factor
-
-    product = (nh3_i * 0.5 + nh3_b * 0.5) * (nox_b * 0.5 + nox_i * 0.5)
-    denominator = product + product
-    # MAGICC7 sets the hemispheric forcing to zero without anthropogenic NOx x NH3.
-    hemisphere = np.divide(
-        (rf + rf) * product,
-        denominator,
-        out=np.zeros_like(denominator),
-        where=denominator != 0.0,
-    )
-    w = np.asarray(pattern, dtype=np.float64)
-    land = area_fractions()[1::2] * 2
-    ocean = 1 - land
-    total = np.empty((len(y), 4))
-    for h in range(2):
-        sea, lnd, wo, wl = ocean[h], land[h], w[2 * h], w[2 * h + 1]
-        total[:, 2 * h] = ((hemisphere * (sea + lnd)) * wo) / (sea * wo + lnd * wl)
-        total[:, 2 * h + 1] = ((hemisphere * (lnd + sea)) * wl) / (lnd * wl + sea * wo)
-    return total, rf
-
-
-def nitrate(  # noqa: PLR0913
-    years: ArrayLike,
-    nox: tuple[ArrayLike, ArrayLike],
-    nh3: tuple[ArrayLike, ArrayLike],
-    sox: ArrayLike,
-    pattern: ArrayLike,
-    *,
-    harmonisation_target: float | None = None,
-    harmonisation_reference_year: float = 2019,
-    natural_nox: float = 10.0,
-    natural_nh3: float = 21.0,
-    natural_sox: float = 14.0,
-    lambda_so2: float = 1.6,
-    burden_pi: float = 0.0085,
-    optical_thickness_pi: float = 1.41,
-    burden_to_optical_thickness_exponent: float = 0.76,
-    factor: float | None = None,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Industrial and biomass nitrate direct forcing (Hauglustaine et al. 2014).
-
-    ``nox`` and ``nh3`` are (industrial, biomass) emissions in Mt N/yr and ``sox``
-    the total in Mt S/yr, all without natural sources.
-    Each hemisphere's forcing follows its share of NOx x NH3, spread over its
-    boxes by ``pattern``, and splits between the sources by the same product.
-    Emissions fall half on each hemisphere's land, as MAGICC7 spreads global inputs.
-    The forcing is harmonised to ``harmonisation_target``, or scaled by ``factor``.
-    """
-    total, _ = _nitrate_total(
-        years,
-        nox,
-        nh3,
-        sox,
-        pattern,
-        harmonisation_target=harmonisation_target,
-        harmonisation_reference_year=harmonisation_reference_year,
-        natural_nox=natural_nox,
-        natural_nh3=natural_nh3,
-        natural_sox=natural_sox,
-        lambda_so2=lambda_so2,
-        burden_pi=burden_pi,
-        optical_thickness_pi=optical_thickness_pi,
-        burden_to_optical_thickness_exponent=burden_to_optical_thickness_exponent,
-        factor=factor,
-    )
-    nox_i, nox_b = (np.asarray(e, dtype=np.float64) for e in nox)
-    nh3_i, nh3_b = (np.asarray(e, dtype=np.float64) for e in nh3)
-    industrial = (nh3_i * 0.5) * (nox_i * 0.5)
-    biomass = (nh3_b * 0.5) * (nox_b * 0.5)
-    with np.errstate(invalid="ignore"):
-        biomass_share = biomass / (industrial + biomass)
-    biomass_share = np.where(np.isnan(biomass_share), 0.5, biomass_share)
-    return (
-        total * (1.0 - biomass_share)[:, None],
-        total * biomass_share[:, None],
-    )
-
-
-def nitrate_pattern(
-    *args: Any,
-    index: int,
-    **kwargs: Any,
-) -> list[float]:
-    """Regional pattern of nitrate forcing, as MAGICC7 sets ``RF_REGIONS_NO3``.
-
-    It is the total forcing boxes over the global forcing at ``index``.
-    Takes the arguments of `nitrate`.
-    """
-    total, rf = _nitrate_total(*args, shape_only=True, **kwargs)
-    return (total[index] / rf[index]).tolist()
-
-
-# Cloud-active species and their components, in MAGICC7's summation order.
-CLOUD_GROUPS = {
-    "bc": ("BCI", "BCB"),
-    "oc": ("OCI", "OCB", "OCN"),
-    "sox": ("SOXI", "SOXNB"),
-    "ss": ("SS",),
-}
-
-
-def _cloud_drive(
-    emissions: ArrayLike, start: int, natural: float | None = None
-) -> tuple[NDArray[np.float64], float]:
-    """Each year's emissions plus the next year's, and that sum at ``start``."""
-    e = np.asarray(emissions, dtype=np.float64)
-    # The final year has no next year, so it reuses the previous sum.
-    start = min(start, len(e) - 2)
-    if natural is None:
-        forward = e[1:] + e[:-1]
-        return forward, forward[start]
-    # MAGICC7 orders the natural terms differently in the two sums.
-    forward = ((e[:-1] + natural) + e[1:]) + natural
-    return forward, ((e[start + 1] + e[start]) + natural) + natural
-
-
-def _scale_from(
-    values: NDArray[np.float64],
-    start: int,
-    forward: NDArray[np.float64],
-    base: float,
-) -> NDArray[np.float64]:
-    out = values.copy()
-    out[start:-1] = (forward[start:, None] * values[start]) / base
-    out[-1] = out[-2]
-    return out
-
-
-def cloud_albedo(  # noqa: PLR0913
-    years: ArrayLike,
-    optical_thickness: Mapping[str, AerosolHistory],
-    emissions: Mapping[str, ArrayLike],
-    nitrate_forcing: ArrayLike,
-    industrial_nox: ArrayLike,
-    weights: Mapping[str, float],
-    pattern: ArrayLike,
-    *,
-    harmonisation_target: float | None = None,
-    harmonisation_reference_year: float = 2019,
-    factor: float | None = None,
-    bci_soluble_ratio: float = 0.75,
-    natural_sox: float = 14.0,
-    pattern_reference_year: float = 2000,
-    nitrate_switch_year: float = 2014,
-) -> NDArray[np.float64]:
-    """Cloud albedo forcing from a log-linear aerosol number index.
-
-    ``optical_thickness`` maps the components of ``CLOUD_GROUPS`` to their files.
-    Each group is normalised by its area mean when its files end,
-    and ``emissions`` extends each emitted component from there
-    (SOXNB adds ``natural_sox``), while OCN and SS are held constant.
-    ``nitrate_forcing`` is the total nitrate forcing boxes, extended the same way
-    with ``industrial_nox`` from ``nitrate_switch_year``.
-    ``weights`` has the keys no3, bc, oc, sox and ss.
-    The forcing is harmonised to ``harmonisation_target``, or scaled by ``factor``.
-    """
-    y = np.asarray(years, dtype=np.float64)
-    components = {}
-    for names in CLOUD_GROUPS.values():
-        group = {}
-        for name in names:
-            history = optical_thickness[name]
-            ot = _hold_after(on_axis(history, y), y, history.last_year())
-            group[name] = ot * bci_soluble_ratio if name == "BCI" else ot
-        last = min(optical_thickness[name].last_year() for name in names)
-        sw = _switch_index(y, last)
-        norm = area_mean(sum(ot[sw] for ot in group.values()))
-        for name, ot in group.items():
-            scaled = ot / norm
-            if name in emissions:
-                natural = natural_sox if name == "SOXNB" else None
-                drive = _cloud_drive(emissions[name], sw, natural)
-                scaled = _scale_from(scaled, sw, *drive)
-            components[name] = scaled
-
-    no3 = np.asarray(nitrate_forcing, dtype=np.float64)
-    sw = _switch_index(y, nitrate_switch_year)
-    no3 = _scale_from(no3 / area_mean(no3[sw]), sw, *_cloud_drive(industrial_nox, sw))
-
-    # Summed in order like MAGICC7, because builtin sum compensates float rounding.
-    total = functools.reduce(operator.add, (weights[g] for g in ("no3", *CLOUD_GROUPS)))
-
-    def number_index(
-        c: Mapping[str, NDArray[np.float64]], nitrate: NDArray[np.float64]
-    ) -> NDArray[np.float64]:
-        out = nitrate * (weights["no3"] / total)
-        for group, names in CLOUD_GROUPS.items():
-            out = out + sum(c[name] for name in names) * (weights[group] / total)
-        return out
-
-    # The first year is MAGICC7's reference, with no nitrate.
-    index = number_index(components, no3)
-    reference = number_index({k: v[0] for k, v in components.items()}, np.zeros(4))
-    # math.log10 matches MAGICC7's libm, unlike numpy's vectorised log10.
-    log10 = np.vectorize(math.log10, otypes=[np.float64])
-    cdnc = log10(index) - log10(reference)
-    pattern_index = _switch_index(y, pattern_reference_year)
-    boxes = (cdnc / cdnc[pattern_index]) * np.asarray(pattern)
-    if factor is None:
-        harmonisation_index = _switch_index(y, harmonisation_reference_year)
-        harmonised = float(area_mean(boxes[harmonisation_index]))
-        factor = _scale(harmonisation_target, None, harmonised)
-    return boxes * factor
 
 
 def volcanic_substeps(  # noqa: PLR0913

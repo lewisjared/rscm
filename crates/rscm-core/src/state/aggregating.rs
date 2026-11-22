@@ -567,7 +567,8 @@ impl<'a> ScalarWindow<'a> {
         }
     }
 
-    pub(crate) fn time_axis(&self) -> &TimeAxis {
+    /// Time axis of the stored series.
+    pub fn time_axis(&self) -> &TimeAxis {
         match self {
             ScalarWindow::Direct(w) => w.time_axis(),
             ScalarWindow::FromFourBox(w) => w.time_axis(),

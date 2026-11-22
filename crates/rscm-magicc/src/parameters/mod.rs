@@ -13,6 +13,7 @@ mod forcing_aggregation;
 mod ghg_forcing;
 mod halocarbon;
 mod n2o_chemistry;
+mod nitrate_cloud;
 mod nitrogen;
 mod ocean_carbon;
 mod ozone_forcing;
@@ -34,6 +35,10 @@ pub use forcing_aggregation::{
 pub use ghg_forcing::{ForcingMethod, GHGForcingParameters};
 pub use halocarbon::{FGasRegions, HalocarbonChemistryParameters, HalocarbonSpecies};
 pub use n2o_chemistry::N2OChemistryParameters;
+pub use nitrate_cloud::{
+    CloudAlbedoParameters, CloudSpecies, ForcingTarget, NitrateCloudForcingParameters,
+    NitrateParameters,
+};
 pub use nitrogen::{DepositionFromEmissions, NitrogenParameters, PrognosticFixation};
 pub use ocean_carbon::{IRFForm, OceanCarbonMethod, OceanCarbonParameters};
 pub use ozone_forcing::{OzoneForcingParameters, TroposphericOzoneRegions};

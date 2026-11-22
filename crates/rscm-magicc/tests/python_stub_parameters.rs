@@ -168,6 +168,10 @@ fn magicc_stub_typeddicts_match_rust_parameters() {
             to_json(&N2OChemistryParameters::default()),
         ),
         (
+            "NitrateCloudForcingParameters",
+            to_json(&NitrateCloudForcingParameters::default()),
+        ),
+        (
             "NitrogenParameters",
             to_json(&NitrogenParameters::default()),
         ),

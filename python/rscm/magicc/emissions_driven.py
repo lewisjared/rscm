@@ -18,6 +18,7 @@ are aggregated with efficacies and regional patterns to drive ClimateUDEB.
 | `CO2Budget`           | CO2 concentration                                       |
 | `GHGForcing`          | CO2, CH4 and N2O forcing and stratospheric H2O from CH4 |
 | `OzoneForcing`        | Stratospheric and tropospheric ozone forcing            |
+| `NitrateCloudForcing` | Nitrate direct and cloud albedo aerosol forcing         |
 | `ForcingAggregation`  | Total and efficacy-adjusted forcing                     |
 | `ClimateUDEB`         | Temperature, ocean heat uptake and thermal expansion    |
 | `SeaLevelRise`        | Sea level rise (optional)                               |
@@ -59,6 +60,7 @@ COMPONENTS = (
     "CO2Budget",
     "GHGForcing",
     "OzoneForcing",
+    "NitrateCloudForcing",
     "ForcingAggregation",
     "ClimateUDEB",
 )

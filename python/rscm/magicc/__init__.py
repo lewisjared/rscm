@@ -9,7 +9,8 @@ organised by domain:
   [N2OChemistryBuilder][], [HalocarbonChemistryBuilder][]
 - Carbon: [TerrestrialCarbonBuilder][], [OceanCarbonBuilder][],
   [CO2BudgetBuilder][], [PermafrostBuilder][]
-- Forcing: [GHGForcingBuilder][], [OzoneForcingBuilder][], [AerosolDirectBuilder][],
+- Forcing: [GHGForcingBuilder][], [OzoneForcingBuilder][],
+  [NitrateCloudForcingBuilder][], [AerosolDirectBuilder][],
   [AerosolIndirectBuilder][], [ForcingAggregationBuilder][]
 
 Two models couple them:
@@ -37,6 +38,7 @@ from rscm._lib.magicc import (
     GHGForcingBuilder,
     HalocarbonChemistryBuilder,
     N2OChemistryBuilder,
+    NitrateCloudForcingBuilder,
     OceanCarbonBuilder,
     OzoneForcingBuilder,
     PermafrostBuilder,
@@ -58,6 +60,7 @@ __all__ = [
     "GHGForcingBuilder",
     "HalocarbonChemistryBuilder",
     "N2OChemistryBuilder",
+    "NitrateCloudForcingBuilder",
     "OceanCarbonBuilder",
     "OzoneForcingBuilder",
     "PermafrostBuilder",

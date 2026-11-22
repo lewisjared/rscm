@@ -18,14 +18,16 @@ use crate::carbon::{CO2Budget, OceanCarbon, Permafrost, TerrestrialCarbon};
 use crate::chemistry::{CH4Chemistry, CH4Oxidation, HalocarbonChemistry, N2OChemistry};
 use crate::climate::{ClimateUDEB, SeaLevelRise};
 use crate::forcing::{
-    AerosolDirect, AerosolIndirect, ForcingAggregation, GHGForcing, OzoneForcing,
+    AerosolDirect, AerosolIndirect, Drivers, ForcingAggregation, GHGForcing, NitrateCloudForcing,
+    OzoneForcing,
 };
 use crate::parameters::{
     AerosolDirectParameters, AerosolIndirectParameters, CH4ChemistryParameters,
     CH4OxidationParameters, CO2BudgetParameters, ClimateUDEBParameters,
     ForcingAggregationParameters, GHGForcingParameters, HalocarbonChemistryParameters,
-    N2OChemistryParameters, OceanCarbonParameters, OzoneForcingParameters, PermafrostParameters,
-    SeaLevelRiseParameters, TerrestrialCarbonParameters,
+    N2OChemistryParameters, NitrateCloudForcingParameters, OceanCarbonParameters,
+    OzoneForcingParameters, PermafrostParameters, SeaLevelRiseParameters,
+    TerrestrialCarbonParameters,
 };
 
 // Climate components
@@ -415,6 +417,104 @@ impl ForcingAggregationBuilder {
     }
 }
 
+/// Builder for `NitrateCloudForcing`, whose parameters are validated on build.
+#[pyclass]
+pub struct NitrateCloudForcingBuilder {
+    parameters: NitrateCloudForcingParameters,
+}
+
+impl NitrateCloudForcingBuilder {
+    fn with_drivers<T>(
+        &self,
+        inputs: std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<f64>>,
+        time: Vec<f64>,
+        f: impl FnOnce(&NitrateCloudForcing, &Drivers) -> rscm_core::errors::RSCMResult<T>,
+    ) -> PyResult<T> {
+        let component = NitrateCloudForcing::from_parameters(self.parameters.clone())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let (Some(&first), Some(&last)) = (time.first(), time.last()) else {
+            return Err(PyValueError::new_err("time needs at least one value"));
+        };
+        let series = SeriesLookup::new(Some(inputs), Some(time))?;
+        let emissions = |name: &str, t: f64| Ok(series.at(name, t)?[0]);
+        let optical_thickness = |name: &str, t: f64| {
+            let row = series.at(name, t)?;
+            <[f64; 4]>::try_from(row).map_err(|_| {
+                rscm_core::errors::RSCMError::Error(format!("{name} needs four boxes"))
+            })
+        };
+        let drivers = Drivers {
+            emissions: &emissions,
+            optical_thickness: &optical_thickness,
+            first,
+            last,
+        };
+        f(&component, &drivers).map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+}
+
+#[pymethods]
+impl NitrateCloudForcingBuilder {
+    #[staticmethod]
+    pub fn from_parameters(parameters: Bound<PyAny>) -> PyResult<Self> {
+        rscm_core::python::parameters::depythonize::<NitrateCloudForcingParameters>(&parameters)
+            .map(|parameters| Self { parameters })
+    }
+
+    /// Four-box forcing of each output in each year of `time`, from the prescribed `inputs` on it.
+    pub fn forcing(
+        &self,
+        py: Python<'_>,
+        inputs: std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<f64>>,
+        time: Vec<f64>,
+    ) -> PyResult<std::collections::HashMap<String, Py<PyAny>>> {
+        let years = time.clone();
+        let rows = self.with_drivers(inputs, time, |component, drivers| {
+            years
+                .iter()
+                .map(|&year| component.forcing(drivers, year))
+                .collect::<rscm_core::errors::RSCMResult<Vec<_>>>()
+        })?;
+        let column = |f: fn(&crate::forcing::NitrateCloud) -> [f64; 4]| {
+            numpy::PyArray2::from_vec2(py, &rows.iter().map(|r| f(r).to_vec()).collect::<Vec<_>>())
+                .map(|a| a.into_any().unbind())
+        };
+        Ok(std::collections::HashMap::from([
+            (
+                "Effective Radiative Forcing|Aerosols|Direct Effect|NO3|Fossil".to_string(),
+                column(|r| r.nitrate_fossil)?,
+            ),
+            (
+                "Effective Radiative Forcing|Aerosols|Direct Effect|NO3|Biosphere".to_string(),
+                column(|r| r.nitrate_biosphere)?,
+            ),
+            (
+                "Effective Radiative Forcing|Aerosols|Indirect Effect".to_string(),
+                column(|r| r.cloud_albedo)?,
+            ),
+        ]))
+    }
+
+    /// Box nitrate forcing per unit global nitrate forcing in `year`,
+    /// from the prescribed `inputs` on `time`.
+    pub fn nitrate_pattern(
+        &self,
+        inputs: std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<f64>>,
+        time: Vec<f64>,
+        year: f64,
+    ) -> PyResult<[f64; 4]> {
+        self.with_drivers(inputs, time, |component, drivers| {
+            component.nitrate_pattern(drivers, year)
+        })
+    }
+
+    pub fn build(&self) -> PyResult<PyRustComponent> {
+        NitrateCloudForcing::from_parameters(self.parameters.clone())
+            .map(|component| PyRustComponent(std::sync::Arc::new(component)))
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+}
+
 /// Prescribed series by name on a time axis, read at any time as a model window reads them.
 struct SeriesLookup {
     series: std::collections::HashMap<String, Vec<Vec<f64>>>,
@@ -499,6 +599,7 @@ pub fn magicc(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<OzoneForcingBuilder>()?;
     m.add_class::<AerosolDirectBuilder>()?;
     m.add_class::<AerosolIndirectBuilder>()?;
+    m.add_class::<NitrateCloudForcingBuilder>()?;
     m.add_class::<ForcingAggregationBuilder>()?;
     Ok(())
 }

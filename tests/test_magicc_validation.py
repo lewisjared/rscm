@@ -11,7 +11,6 @@ import pytest
 
 from rscm.core import TimeAxis
 from rscm.magicc import checks, emissions_driven, full
-from rscm.magicc import prescribed as pr
 from rscm.names import SECTORS
 from rscm.validation import ExitCode, InputValidationError, IssueKind
 
@@ -340,18 +339,6 @@ def test_non_finite_prescribed_forcing_is_rejected(inputs):
         IssueKind.NON_FINITE,
         "Effective Radiative Forcing|Land-use Change",
     ) in found
-
-
-def test_zero_anthropogenic_nitrate_precursors_give_finite_forcing():
-    """MAGICC7 sets nitrate forcing to zero rather than dividing 0 by 0."""
-    zero = np.zeros(len(YEARS))
-
-    industrial, biomass = pr.nitrate(
-        YEARS, (zero, zero), (zero, zero), zero, [1.0] * 4, factor=1.0
-    )
-
-    assert np.all(np.isfinite(industrial))
-    assert np.all(np.isfinite(biomass))
 
 
 def test_initial_concentrations_come_from_the_files(inputs):

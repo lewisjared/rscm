@@ -12,6 +12,8 @@ CUMULATIVE_EMISSIONS: Final = "Cumulative Emissions"
 """Quantity segment of cumulative emissions."""
 ATMOSPHERIC_CONCENTRATIONS: Final = "Atmospheric Concentrations"
 """Quantity segment of atmospheric concentrations."""
+OPTICAL_THICKNESS: Final = "Optical Thickness"
+"""Quantity segment of the optical thickness of an aerosol species."""
 ERF: Final = "Effective Radiative Forcing"
 """Total effective radiative forcing, and the parent of each agent's forcing."""
 
