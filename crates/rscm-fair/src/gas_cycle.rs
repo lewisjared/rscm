@@ -139,8 +139,7 @@ fn default_maximum_iirf() -> FloatValue {
 /// Box contents and emission totals of one gas.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GasState {
-    /// Concentration variable of the gas, which names it. Empty in records from rscm 0.8.
-    #[serde(default)]
+    /// Concentration variable of the gas, which names it.
     pub concentration: String,
     /// Airborne emissions in each box.
     pub boxes: Vec<FloatValue>,
@@ -430,7 +429,7 @@ impl Component for GasCycle {
         let species = &self.parameters.species;
         check_state_len("species", species.len(), state.gases.len())?;
         for (index, (s, gas)) in species.iter().zip(&state.gases).enumerate() {
-            if !gas.concentration.is_empty() && gas.concentration != s.concentration {
+            if gas.concentration != s.concentration {
                 return Err(RSCMError::Error(format!(
                     "species {index} is '{}' in the parameters but '{}' in the state",
                     s.concentration, gas.concentration
@@ -685,7 +684,7 @@ mod tests {
         }
 
         #[test]
-        fn a_state_without_names_is_checked_by_length() {
+        fn a_state_without_names_cannot_be_read() {
             let mut record = record();
             for gas in record.states.get_mut("Gases").unwrap()["gases"]
                 .as_array_mut()
@@ -693,7 +692,8 @@ mod tests {
             {
                 gas.as_object_mut().unwrap().remove("concentration");
             }
-            assert!(Model::restore(&record).is_ok());
+            let err = Model::restore(&record).unwrap_err().to_string();
+            assert!(err.contains("Could not read the state of Gases"), "{err}");
         }
     }
 }
