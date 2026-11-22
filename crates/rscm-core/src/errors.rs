@@ -64,6 +64,10 @@ pub enum RSCMError {
         suggestions: Vec<(String, String)>,
     },
 
+    /// Two components, or a component and a schema aggregate, with the same label.
+    #[error("Two components are labelled '{label}'. Register one with with_component_as(label, component) to give it another label.")]
+    DuplicateLabel { label: String },
+
     /// A `with_lag` or `with_lag_for` call that names no edge of the model, or lags an average.
     #[error("Invalid lag {lag}: {reason}")]
     InvalidLag { lag: String, reason: String },

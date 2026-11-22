@@ -46,6 +46,11 @@ The one component or schema aggregate that writes a variable.
 Every component that reads it is one of its consumers.
 _Avoid_: Writer, provider, source component, upstream component (for any producer)
 
+**Label**:
+The name a model gives one of its components, which lags, the coupling report and errors use.
+It defaults to the component's type name, and a schema aggregate's label is its name.
+_Avoid_: Component name (for the label), consumer name, key
+
 **Feedback loop**:
 A chain of components where a variable produced later in the step is needed earlier in the same step.
 _Avoid_: Cycle (outside the dependency graph), circular dependency

@@ -348,9 +348,9 @@ class PrescribedInput:
     """
 
     definition: VariableDefinition
-    """The variable as its first consumer, by name, declares it."""
+    """The variable as its first consumer, by label, declares it."""
     consumers: list[str]
-    """The components that read it, sorted by name."""
+    """The labels of the components that read it, sorted."""
     supplied: bool
     """Whether prescribed data or an initial value supplies it."""
 
@@ -562,10 +562,21 @@ class ModelBuilder:
         self, component: RustComponent | PythonComponent | Component
     ) -> Self:
         """
-        Add a component.
+        Add a component, labelled with its type name.
 
         Takes a Rust component, a `PythonComponent`
         or an `rscm.component.Component` instance, which it wraps.
+        A Python component is labelled with its class `__name__`.
+        `build` fails if two components share a label.
+        """
+    def with_component_as(
+        self, label: str, component: RustComponent | PythonComponent | Component
+    ) -> Self:
+        """
+        Add a component under a label.
+
+        Lags, the coupling report and errors name the component by its label,
+        so two instances of one type can couple independently.
         """
     def with_initial_values(
         self, initial_values: Mapping[str, F | tuple[F, str]]
@@ -618,9 +629,10 @@ class ModelBuilder:
         """
         Lag the edge from a variable into one component.
 
-        ``consumer`` is the component's name, such as ``"OceanCarbon"``.
+        ``consumer`` is the component's label, such as ``"OceanCarbon"``,
+        or the name of a schema aggregate.
         Other consumers of the variable still read this step's value.
-        Building fails if no component of that name reads the variable as an input.
+        Building fails if no component with that label reads the variable as an input.
         """
     def with_timeseries_type(
         self, variable: str, timeseries_type: TimeseriesType

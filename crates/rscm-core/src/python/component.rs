@@ -196,12 +196,14 @@ impl PyRustComponent {
 pub struct PythonComponent {
     pub component: Py<PyAny>,
     name: String,
+    /// The class `__name__`, the component's default label.
+    class_name: String,
     definitions: Vec<VariableDefinition>,
 }
 
 impl std::fmt::Debug for PythonComponent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(&self.name).finish_non_exhaustive()
+        f.debug_struct(&self.class_name).finish_non_exhaustive()
     }
 }
 
@@ -216,6 +218,7 @@ impl PythonComponent {
             )));
         }
         let name = bound.get_type().qualname()?.to_string();
+        let class_name = bound.get_type().name()?.to_string();
         let definitions: Vec<VariableDefinition> = bound.call_method0("definitions")?.extract()?;
         for definition in &definitions {
             check_unit(&definition.unit).map_err(|e| {
@@ -228,6 +231,7 @@ impl PythonComponent {
         Ok(Self {
             component,
             name,
+            class_name,
             definitions,
         })
     }

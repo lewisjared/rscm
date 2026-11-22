@@ -20,7 +20,7 @@ use super::types::{RequiredTransformation, TransformDirection};
 pub struct ComponentCoupling {
     /// Position in the execution order (0-indexed).
     pub order: usize,
-    /// Component type name.
+    /// The component's label.
     pub name: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub inputs: Vec<DeclaredVariable>,
@@ -279,7 +279,7 @@ impl Model {
             .collect();
         let names: HashMap<_, _> = order
             .iter()
-            .map(|&nx| (nx, Model::extract_component_name(&self.components[nx])))
+            .map(|&nx| (nx, self.component_label(nx)))
             .collect();
         let producers: HashMap<String, &str> = order
             .iter()

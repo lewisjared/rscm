@@ -16,6 +16,8 @@ mod grid_validation;
 #[cfg(test)]
 mod grid_weights;
 #[cfg(test)]
+mod labels;
+#[cfg(test)]
 mod lags;
 #[cfg(test)]
 mod missing_prescribed;

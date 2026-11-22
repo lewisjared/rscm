@@ -110,9 +110,8 @@ BUILDERS: dict[str, Any] = {
 
 LAGS = (
     Lag(SURFACE_AIR_TEMPERATURE_CHANGE),
-    Lag(ATMOSPHERIC_CONCENTRATIONS_CO2, "TerrestrialCarbon"),
-    Lag(ATMOSPHERIC_CONCENTRATIONS_CO2, "OceanCarbon"),
-    Lag(EQUILIBRIUM_CLIMATE_SENSITIVITY, "ForcingAggregation"),
+    Lag(ATMOSPHERIC_CONCENTRATIONS_CO2, into=["TerrestrialCarbon", "OceanCarbon"]),
+    Lag(EQUILIBRIUM_CLIMATE_SENSITIVITY, into=["ForcingAggregation"]),
 )
 """MAGICC7's feedback lags on last year's temperature, CO2 and climate sensitivity."""
 

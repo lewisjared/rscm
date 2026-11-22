@@ -8,7 +8,7 @@ A component reads every coupled input with `get()` and never chooses a time inde
 The builder links every producer after all components are registered,
 decides which edges lag by one step, and fills each input window to match.
 A feedback loop breaks only where the model wiring says so,
-with `builder.with_lag(variable)` or `builder.with_lag_for(variable, consumer)`.
+with `builder.with_lag(variable)` or `builder.with_lag_for(variable, label)`.
 
 Before this, insertion order decided coupling.
 The builder linked a consumer only to producers registered before it,
@@ -32,7 +32,8 @@ and each author had to pick between `at_start`, `at_end`, `get` and `previous` t
 
 ## Consequences
 
-- `with_lag(variable)` lags every edge from that variable, and `with_lag_for(variable, consumer)` lags one.
+- `with_lag(variable)` lags every edge from that variable, and `with_lag_for(variable, label)` lags one.
+  A label names one component, so two instances of one type lag independently.
   A consumer left out, such as `SeaLevelRise` reading temperature, still sees this step's value.
 - A lag is part of the model, so it holds whether the variable is modelled or prescribed.
   Prescribing temperature to test ozone on its own keeps ozone's lag.
