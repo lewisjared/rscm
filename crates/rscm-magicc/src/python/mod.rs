@@ -174,6 +174,20 @@ impl CH4OxidationBuilder {
     }
 }
 create_component_builder!(N2OChemistryBuilder, N2OChemistry, N2OChemistryParameters);
+
+#[pymethods]
+impl N2OChemistryBuilder {
+    /// Natural emissions (Mt N2ON/yr) that hold the starting concentration (ppb)
+    /// over the first step, given the anthropogenic emissions (Mt N2ON/yr) read in that step.
+    pub fn natural_emissions_in_balance(
+        &self,
+        concentration: f64,
+        anthropogenic_emissions: f64,
+    ) -> f64 {
+        N2OChemistry::from_parameters(self.parameters.clone())
+            .natural_emissions_in_balance(concentration, anthropogenic_emissions)
+    }
+}
 create_component_builder!(
     HalocarbonChemistryBuilder,
     HalocarbonChemistry,

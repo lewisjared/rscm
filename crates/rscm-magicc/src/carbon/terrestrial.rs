@@ -41,6 +41,9 @@
 //! # Inputs
 //!
 //! - `Nitrogen Flux|Deposition` (Gt N/yr), only with the `nitrogen` parameter
+//!   and no deposition from emissions
+//! - `Emissions|NOx|{Fossil,Biosphere}` and `Emissions|NH3|{Fossil,Biosphere}` (Mt N/yr),
+//!   only with deposition from emissions
 //! - `Nitrogen Flux|Fixation` (Gt N/yr), only with the `nitrogen` parameter and no prognostic fixation
 //!
 //! # Outputs
@@ -51,7 +54,9 @@
 //! - `Nitrogen Flux|{Uptake,Recycling,Losses}` (Gt N/yr), only with the `nitrogen` parameter
 
 use crate::bounds::Bounded;
-use rscm_core::names::{NITROGEN_FLUX_DEPOSITION, NITROGEN_FLUX_FIXATION};
+use rscm_core::names::{
+    child, EMISSIONS_NH3, EMISSIONS_NOX, NITROGEN_FLUX_DEPOSITION, NITROGEN_FLUX_FIXATION,
+};
 use std::any::Any;
 
 use super::nitrogen::{NitrogenBudget, NitrogenDrivers, NitrogenState};
@@ -734,9 +739,19 @@ impl TerrestrialCarbon {
         let nitrogen_inputs = match &self.parameters.nitrogen {
             None => (0.0, 0.0),
             Some(n) => (
-                input_state
-                    .get_scalar_window(NITROGEN_FLUX_DEPOSITION)
-                    .get(),
+                match &n.deposition_from_emissions {
+                    Some(d) => {
+                        let sectors = |gas: &str| {
+                            DEPOSITION_SECTORS.map(|sector| {
+                                input_state.get_scalar_window(&child(gas, sector)).get()
+                            })
+                        };
+                        d.deposition(sectors(EMISSIONS_NOX), sectors(EMISSIONS_NH3))
+                    }
+                    None => input_state
+                        .get_scalar_window(NITROGEN_FLUX_DEPOSITION)
+                        .get(),
+                },
                 if n.prognostic_fixation.is_some() {
                     0.0
                 } else {
@@ -798,6 +813,9 @@ impl TerrestrialCarbon {
     }
 }
 
+/// Sectors of the NOx and NH3 emissions that deposit nitrogen.
+const DEPOSITION_SECTORS: [&str; 2] = ["Fossil", "Biosphere"];
+
 const NITROGEN_OUTPUTS: [(&str, &str, TimeseriesType); 5] = [
     // The factor applied over a step, which MAGICC7 labels by the step's start
     ("Nitrogen Limitation Factor", "1", TimeseriesType::Average),
@@ -833,10 +851,21 @@ impl Component for TerrestrialCarbon {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
         if let Some(n) = &self.parameters.nitrogen {
-            definitions.push(VariableDefinition::scalar_input(
-                NITROGEN_FLUX_DEPOSITION,
-                "Gt N/yr",
-            ));
+            if n.deposition_from_emissions.is_some() {
+                for gas in [EMISSIONS_NOX, EMISSIONS_NH3] {
+                    for sector in DEPOSITION_SECTORS {
+                        definitions.push(VariableDefinition::scalar_input(
+                            &child(gas, sector),
+                            "Mt N/yr",
+                        ));
+                    }
+                }
+            } else {
+                definitions.push(VariableDefinition::scalar_input(
+                    NITROGEN_FLUX_DEPOSITION,
+                    "Gt N/yr",
+                ));
+            }
             definitions.push(if n.prognostic_fixation.is_some() {
                 VariableDefinition::scalar_output(NITROGEN_FLUX_FIXATION, "Gt N/yr")
                     .with_timeseries_type(TimeseriesType::Average)

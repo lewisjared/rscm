@@ -20,6 +20,41 @@ pub struct PrognosticFixation {
     pub half_saturation_npp: FloatValue,
 }
 
+/// Nitrogen deposition calculated from NOx and NH3 emissions.
+#[rscm_core::params]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+#[serde(deny_unknown_fields)]
+pub struct DepositionFromEmissions {
+    /// Share of the emitted nitrogen deposited on land (MAGICC7 `NCYCLE_FRAC_NDEP_LAND`)
+    ///
+    /// unit: dimensionless
+    pub land_fraction: FloatValue,
+    /// Reproduce MAGICC7 v7.5.3 counting industrial NH3 twice and leaving out biomass NH3
+    pub include_nh3_counted_twice: bool,
+}
+
+impl Default for DepositionFromEmissions {
+    fn default() -> Self {
+        Self {
+            land_fraction: 0.7,
+            include_nh3_counted_twice: true,
+        }
+    }
+}
+
+impl DepositionFromEmissions {
+    /// Deposition (Gt N/yr) from fossil and biosphere NOx and NH3 emissions (Mt N/yr).
+    pub fn deposition(&self, nox: [FloatValue; 2], nh3: [FloatValue; 2]) -> FloatValue {
+        let nh3_biosphere = if self.include_nh3_counted_twice {
+            nh3[0]
+        } else {
+            nh3[1]
+        };
+        1e-3 * self.land_fraction * ((nox[0] + nox[1]) + (nh3[0] + nh3_biosphere))
+    }
+}
+
 /// Parameters for the nitrogen limitation of NPP.
 ///
 /// Each year the plant-available nitrogen pool is solved for the steady state of
@@ -64,6 +99,9 @@ pub struct NitrogenParameters {
     /// Fixation from NPP, or `None` to read `Nitrogen Flux|Fixation`
     /// (MAGICC7 `NCYCLE_APPLY_PROGNOSTIC_NFIX`)
     pub prognostic_fixation: Option<PrognosticFixation>,
+    /// Deposition from NOx and NH3 emissions, or `None` to read `Nitrogen Flux|Deposition`
+    /// (MAGICC7 `NCYCLE_APPLY_NDEP_FROM_EMIS`)
+    pub deposition_from_emissions: Option<DepositionFromEmissions>,
 }
 
 impl Default for NitrogenParameters {
@@ -77,6 +115,38 @@ impl Default for NitrogenParameters {
             availability_factor_c: 2.0,
             loss_turnover_time: 2.0,
             prognostic_fixation: None,
+            deposition_from_emissions: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deposition_counts_nh3_as_magicc7_does() {
+        let reproduced = DepositionFromEmissions {
+            land_fraction: 1.0,
+            include_nh3_counted_twice: true,
+        };
+        let fixed = DepositionFromEmissions {
+            include_nh3_counted_twice: false,
+            ..reproduced.clone()
+        };
+        assert_eq!(reproduced.deposition([0.0, 0.0], [1.0, 2.0]), 2e-3);
+        assert_eq!(fixed.deposition([0.0, 0.0], [1.0, 2.0]), 3e-3);
+    }
+
+    #[test]
+    fn test_deposition_scales_with_land_fraction() {
+        let deposition = DepositionFromEmissions {
+            land_fraction: 0.5,
+            include_nh3_counted_twice: false,
+        };
+        assert_eq!(
+            deposition.deposition([2.0, 4.0], [1.0, 1.0]),
+            1e-3 * 0.5 * 8.0
+        );
     }
 }

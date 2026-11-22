@@ -210,6 +210,10 @@ fn magicc_stub_typeddicts_match_rust_parameters() {
         "maximum_fixation_rate": 1.0, "half_saturation_npp": 1.0,
     }))
     .unwrap();
+    let deposition: DepositionFromEmissions = serde_json::from_value(json!({
+        "land_fraction": 0.5, "include_nh3_counted_twice": false,
+    }))
+    .unwrap();
     let ozone: TroposphericOzoneRegions = serde_json::from_value(json!({
         "regional_pattern": pattern, "nh_land_fraction": 0.4, "sh_land_fraction": 0.2,
     }))
@@ -224,6 +228,7 @@ fn magicc_stub_typeddicts_match_rust_parameters() {
         ("ForcingAgent", to_json(&agent)),
         ("EfficacyClimate", to_json(&climate)),
         ("PrognosticFixation", to_json(&fixation)),
+        ("DepositionFromEmissions", to_json(&deposition)),
         ("TroposphericOzoneRegions", to_json(&ozone)),
         ("FGasRegions", to_json(&fgas)),
     ]);

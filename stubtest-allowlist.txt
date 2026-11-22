@@ -42,6 +42,7 @@ rscm._lib.core.ComponentBuilder
 (?s:rscm\._lib\.magicc\.[A-Z][A-Za-z0-9]*Parameters$)
 rscm._lib.magicc.AntarcticDischarge
 rscm._lib.magicc.AntarcticRegion
+rscm._lib.magicc.DepositionFromEmissions
 rscm._lib.magicc.DischargeCase
 rscm._lib.magicc.EfficacyClimate
 rscm._lib.magicc.FGasRegions
