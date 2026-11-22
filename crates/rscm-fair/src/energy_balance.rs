@@ -61,6 +61,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
 /// Parameters of [`EnergyBalance`].
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct EnergyBalanceParameters {

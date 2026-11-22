@@ -113,6 +113,7 @@ pub mod interpolate;
 pub mod ivp;
 pub mod model;
 pub mod names;
+pub mod non_finite;
 pub mod python;
 pub mod schema;
 pub mod spatial;
@@ -125,8 +126,8 @@ pub mod utils;
 pub mod errors;
 pub mod forcing;
 
-// Re-export derive macro for convenience
-pub use rscm_macros::{ComponentIO, ComponentMetadata};
+// Re-export the macros for convenience
+pub use rscm_macros::{params, ComponentIO, ComponentMetadata};
 
 // Re-export component types
 pub use component::{

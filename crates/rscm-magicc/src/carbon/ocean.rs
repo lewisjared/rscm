@@ -61,6 +61,7 @@ use serde::{Deserialize, Serialize};
 /// Holds the flux history and the last monthly substep of the previous year,
 /// which persist across solve() calls. Unlike coupled state
 /// (VariableRole::State), this is private to the component.
+#[rscm_core::params]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OceanCarbonState {
     /// Air-sea flux of each substep for the IRF convolution (ppm/yr).

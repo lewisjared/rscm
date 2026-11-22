@@ -41,6 +41,7 @@ impl From<HemisphericRegion> for usize {
 /// let global = grid.aggregate_global(&hemispheric);
 /// assert_eq!(global, 12.5); // Equal weights = simple average
 /// ```
+#[rscm_core::params]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct HemisphericGrid {
     /// Weights for aggregating hemispheres to global

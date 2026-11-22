@@ -6,6 +6,7 @@ use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
 /// Michaelis-Menten nitrogen fixation, calculated from NPP.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PrognosticFixation {
@@ -25,6 +26,7 @@ pub struct PrognosticFixation {
 /// deposition, recycling and fixation against plant uptake and losses.
 /// From `fertilisation_start_year` NPP is scaled by the nitrogen availability
 /// relative to the last year before it.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]

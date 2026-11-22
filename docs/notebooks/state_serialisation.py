@@ -111,7 +111,7 @@ model.step()
 # - `rscm`: the RSCM version that wrote it. Restoring a record from another version warns.
 # - `builder`: the `ModelBuilder`, with its components, parameters, prescribed data and initial values.
 # - `time_index`: the current position on the time axis.
-# - `values`: every timeseries, with values solved so far and NaN (`null`) for later time points.
+# - `values`: every timeseries, with values solved so far and NaN (`"NaN"`) for later time points.
 # - `timeseries_types`: whether each variable is a point or an average.
 # - `states`: internal state that each component carries between steps, keyed by its label.
 
@@ -193,7 +193,5 @@ print(f"Finished at {resumed.current_time()}")
 # - A Python component is saved through its `to_json()` and `from_json()` methods,
 #   so its class must be importable when the model is restored.
 #   Restoring imports the module the file names, so only load checkpoints you trust.
-# - JSON has no NaN, so a component parameter or internal state that is NaN or infinite cannot be recorded.
-#   Timeseries values can be NaN.
 # - A checkpoint from another RSCM version restores with a warning,
 #   and its results may differ from the run that wrote it.

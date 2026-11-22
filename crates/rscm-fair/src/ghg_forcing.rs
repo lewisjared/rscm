@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
 /// One greenhouse gas.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct GHGSpecies {

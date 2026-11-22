@@ -63,6 +63,7 @@ use std::collections::HashMap;
 /// let hemispheric = StateValue::Hemispheric(HemisphericSlice::from_array([15.0, 10.0]));
 /// assert_eq!(hemispheric.to_scalar(), 12.5); // Mean of both hemispheres
 /// ```
+#[rscm_core::params]
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StateValue {

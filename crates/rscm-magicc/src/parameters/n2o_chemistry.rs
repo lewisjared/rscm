@@ -35,6 +35,7 @@ use serde::{Deserialize, Serialize};
 /// Unlike CH4, whose sink uses the current burden, the N2O sink uses a delayed
 /// average burden to account for the time tropospheric N2O takes to
 /// mix into the stratosphere where destruction occurs.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]

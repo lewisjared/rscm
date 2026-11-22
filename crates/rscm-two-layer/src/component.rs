@@ -33,6 +33,7 @@ type ModelState = Vector3<FloatValue>;
 /// Held, I. M., Winton, M., Takahashi, K., Delworth, T., Zeng, F., & Vallis, G. K. (2010).
 /// Probing the fast and slow components of global warming by returning abruptly to
 /// preindustrial forcing. Journal of Climate, 23(9), 2418-2427.
+#[rscm_core::params]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TwoLayerParameters {

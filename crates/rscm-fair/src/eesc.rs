@@ -32,6 +32,7 @@ use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
 
 /// One ozone-depleting halogen.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Halogen {
@@ -48,6 +49,7 @@ pub struct Halogen {
 }
 
 /// Parameters of [`EESC`].
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct EESCParameters {

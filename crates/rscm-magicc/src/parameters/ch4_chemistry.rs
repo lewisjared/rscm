@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 /// $$\frac{1}{\tau_{total}} = \frac{1}{\tau_{OH}} + \frac{1}{\tau_{soil}} + \frac{1}{\tau_{strat}} + \frac{1}{\tau_{trop\_cl}}$$
 ///
 /// where ${\tau_{OH}}$ varies with CH4 concentration and co-emitted species.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]

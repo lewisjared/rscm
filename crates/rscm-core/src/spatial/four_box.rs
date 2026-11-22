@@ -53,6 +53,7 @@ impl From<FourBoxRegion> for usize {
 /// // 0.25*15 + 0.25*14 + 0.40*10 + 0.10*9 = 3.75 + 3.5 + 4.0 + 0.9 = 12.15
 /// assert!((global - 12.15).abs() < 1e-10);
 /// ```
+#[rscm_core::params]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct FourBoxGrid {
     /// Weights for aggregating regions to global (typically area fractions)

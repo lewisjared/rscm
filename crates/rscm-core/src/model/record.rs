@@ -78,14 +78,9 @@ impl Record {
     }
 }
 
-/// An error reading `what` back from JSON, which writes a non-finite float as null.
+/// An error reading `what` back from JSON.
 pub(crate) fn read_error(what: &str, err: serde_json::Error) -> RSCMError {
-    let hint = if err.to_string().contains("invalid type: null") {
-        ", a NaN or infinite component parameter or state cannot be recorded"
-    } else {
-        ""
-    };
-    RSCMError::Error(format!("Could not read {what}: {err}{hint}"))
+    RSCMError::Error(format!("Could not read {what}: {err}"))
 }
 
 /// How the saved values are loaded into the rebuilt model.

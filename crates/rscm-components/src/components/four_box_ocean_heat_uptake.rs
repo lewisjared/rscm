@@ -29,6 +29,7 @@ use serde::{Deserialize, Serialize};
 /// Each ratio is the regional heat uptake divided by the global effective radiative forcing.
 /// With equal grid weights (0.25 each), the ratios must average to 1
 /// for the area-weighted mean to equal the global forcing.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FourBoxOceanHeatUptakeParameters {

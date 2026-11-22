@@ -71,6 +71,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Tracks no-feedback reference pools, regrowth history, CO2 reference,
 /// and cumulative Biosphere CO2 emissions for the MAGICC7 attribution scheme.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerrestrialCarbonState {
     /// No-feedback reference pools [plant, detritus, soil] (GtC).

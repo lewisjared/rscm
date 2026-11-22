@@ -35,6 +35,7 @@ pub enum EfficacyMethod {
 }
 
 /// Box forcing given at every substep, such as monthly volcanic forcing.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SubannualForcing {
@@ -98,6 +99,7 @@ impl SubannualForcing {
 /// # Default Values
 ///
 /// Default values are the MAGICC7 defaults from `MAGCFG_DEFAULTALL.CFG`.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]
@@ -558,10 +560,19 @@ impl ClimateUDEBParameters {
     ///
     /// The weights are fractions of the total globe, not of each hemisphere.
     /// MAGICC7 stores them as GLOBALAREAFRACTIONS (FGNO, FGNL, FGSO, FGSL).
+    ///
+    /// # Panics
+    ///
+    /// Panics where [`Self::try_grid`] returns an error.
     pub fn grid(&self) -> FourBoxGrid {
+        self.try_grid().unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Like [`Self::grid`], failing unless the land fractions give valid weights.
+    pub fn try_grid(&self) -> Result<FourBoxGrid, String> {
         let nh_land = self.nh_land_fraction / 2.0;
         let sh_land = self.sh_land_fraction / 2.0;
-        FourBoxGrid::with_weights([0.5 - nh_land, nh_land, 0.5 - sh_land, sh_land])
+        FourBoxGrid::try_with_weights([0.5 - nh_land, nh_land, 0.5 - sh_land, sh_land])
     }
 
     /// LAMCALC parameters at the given sensitivity and 2xCO2 ERF.

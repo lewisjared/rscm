@@ -7,6 +7,7 @@ use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
 /// A forcing agent read by `ForcingAggregation`.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ForcingAgent {
@@ -60,6 +61,7 @@ pub struct ForcingAgent {
 }
 
 /// Parameters for `ForcingAggregation`.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]
@@ -108,6 +110,7 @@ pub enum ForcingTerm {
 ///
 /// Each year the efficacies come from LAMCALC at the previous year's
 /// `Equilibrium Climate Sensitivity` and `2xCO2 Effective Radiative Forcing`.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]

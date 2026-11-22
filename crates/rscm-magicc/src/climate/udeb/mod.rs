@@ -227,6 +227,10 @@ impl ClimateUDEB {
             ));
         }
 
+        parameters
+            .try_grid()
+            .map_err(|e| RSCMError::Error(format!("invalid land fractions: {e}")))?;
+
         if !parameters.co2_efficacy.is_finite() || parameters.co2_efficacy <= 0.0 {
             return Err(RSCMError::Error(format!(
                 "invalid co2_efficacy: must be finite and positive, got {}",

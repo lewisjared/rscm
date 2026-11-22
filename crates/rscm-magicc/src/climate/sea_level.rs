@@ -110,6 +110,7 @@ fn interpolate(x: FloatValue, xs: &[FloatValue], ys: &[FloatValue]) -> FloatValu
 }
 
 /// Basal melt history of one Antarctic drainage region.
+#[rscm_core::params]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AntarcticRegionState {
     /// Warming in the region's first year
@@ -119,6 +120,7 @@ pub struct AntarcticRegionState {
 }
 
 /// Internal state of [`SeaLevelRise`], contributions in mm.
+#[rscm_core::params]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SeaLevelRiseState {
     pub glaciers: FloatValue,

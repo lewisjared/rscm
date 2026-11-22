@@ -44,6 +44,7 @@ use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
 
 /// One forcing agent.
+#[rscm_core::params]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ForcingAgent {
