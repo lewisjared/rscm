@@ -155,6 +155,11 @@ Notes on the table:
   Like mineral dust, it takes the direct aerosol efficacy and pattern (`AER_DIR`).
 - **Patterns from forcing**: land use and BC on snow take their pattern from their box forcing in
   `RF_REGIONS_NORMYEAR`, and nitrate from its total forcing in that year.
+  SOx, BC and OC add their industrial and biomass forcing,
+  and the direct aerosol pattern (`AER_DIR`) adds the industrial, then biomass, then dust forcing.
+  In RSCM these agents list the summed variables in `pattern_terms`,
+  and `ForcingAggregation` sums their scaled box forcing in `pattern_year`,
+  so the patterns follow a scale changed on the configuration.
 - **Scaling**: an agent's `scale` multiplies its ERF before the efficacy.
   With `harmonisation`, the scale is `target` over the change in the agent's global input
   from `preindustrial_reference_year` to `reference_year`, as `RF_*_APPLY = 1` sets in MAGICC7.

@@ -633,3 +633,43 @@ def test_direct_aerosol_scaling_follows_spec(parameters, agent, fields):
     expected = _box_forcing(expected_config, expected_inputs)
     for name, values in expected.items():
         npt.assert_array_equal(actual[name], values, err_msg=name)
+
+
+@pytest.mark.parametrize(
+    ("parameters", "agent", "fields"),
+    [
+        (
+            {"rf_bci_dir_wm2": 0.4},
+            "Aerosols|Direct Effect|BC|Fossil",
+            {"harmonisation": {"target": 0.4}},
+        ),
+        (
+            {"rf_landuse_albedo_yr": 2000},
+            "Land-use Change",
+            {"harmonisation": {"reference_year": 2000.0}},
+        ),
+    ],
+)
+def test_model_follows_direct_aerosol_scaling_on_spec(parameters, agent, fields):
+    """A model with a scaling changed on its spec runs as if rebuilt from MAGICC7.
+
+    The scaled forcing and the regional patterns taken from it both follow the spec.
+    """
+    run = full_run.load_default()
+    config, inputs = _magicc7({})
+    expected_config, expected_inputs = _magicc7(parameters)
+    for a in config["components"]["ForcingAggregation"]["agents"]:
+        if a["variable"] == f"{ERF}|{agent}":
+            for key, value in fields.items():
+                a[key] = {**a[key], **value}
+
+    def temperature(config, inputs):
+        model = emissions_driven.setup_model(config, inputs, run.time_axis).run()
+        boxes = model.timeseries().get_four_box_timeseries_by_name(
+            SURFACE_AIR_TEMPERATURE_CHANGE
+        )
+        return boxes.values()
+
+    expected = temperature(expected_config, expected_inputs)
+    npt.assert_array_equal(temperature(config, inputs), expected)
+    assert not np.array_equal(expected, temperature(*_magicc7({})))

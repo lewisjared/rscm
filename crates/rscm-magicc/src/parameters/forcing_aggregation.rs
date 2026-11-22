@@ -94,6 +94,18 @@ pub struct ForcingAgent {
     /// unit: yr
     #[serde(default)]
     pub relative_to_year: Option<FloatValue>,
+
+    /// Agent variables whose scaled box ERF in `pattern_year`, summed as in `summation`,
+    /// replaces `regional_pattern` for the internal efficacy.
+    /// Empty keeps `regional_pattern`.
+    #[serde(default)]
+    pub pattern_terms: Vec<ForcingTerm>,
+
+    /// Year whose ERF sets the pattern from `pattern_terms` (MAGICC7 `RF_REGIONS_NORMYEAR`).
+    ///
+    /// unit: yr
+    #[serde(default)]
+    pub pattern_year: Option<FloatValue>,
 }
 
 /// Harmonisation of an agent's ERF to a target change since a pre-industrial year.
@@ -161,7 +173,8 @@ pub struct ForcingAggregationParameters {
     pub climate: Option<EfficacyClimate>,
 }
 
-/// An agent or a nested sum in `ForcingAggregationParameters::summation`.
+/// An agent or a nested sum in `ForcingAggregationParameters::summation`,
+/// or an agent variable in `ForcingAgent::pattern_terms`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ForcingTerm {

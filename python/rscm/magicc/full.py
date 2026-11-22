@@ -199,13 +199,28 @@ HELD_AGENTS = {
 }
 """Prescribed agents MAGICC7 holds constant after a year, and the key of that year."""
 
-NORMYEAR_PATTERNS = {
-    "bcsnow": "Black Carbon on Snow",
-    "landuse": "Land-use Change",
+NORMYEAR_PATTERNS: dict[str, list[Any]] = {
+    "bcsnow": ["Black Carbon on Snow"],
+    "landuse": ["Land-use Change"],
+    **{
+        key: [f"{DIRECT}|{species}|Fossil", f"{DIRECT}|{species}|Biosphere"]
+        for key, species in DIRECT_SPECIES.items()
+    },
+    "aer_dir": [
+        [
+            [f"{DIRECT}|OC|Fossil", f"{DIRECT}|BC|Fossil"],
+            f"{DIRECT}|SOx|Fossil",
+        ],
+        [
+            [f"{DIRECT}|SOx|Biosphere", f"{DIRECT}|OC|Biosphere"],
+            f"{DIRECT}|BC|Biosphere",
+        ],
+        f"{DIRECT}|Mineral Dust",
+    ],
 }
 """
-Prescribed agents whose regional pattern MAGICC7 takes from their forcing
-in ``rf_regions_normyear``.
+Patterns MAGICC7 takes from scaled forcing in ``rf_regions_normyear``,
+as the agents summed in order, nested lists first.
 """
 
 GREENHOUSE_GASES = ("CO2", "CH4", "N2O", "F-Gases", "Montreal Protocol Halogen Gases")
@@ -871,11 +886,10 @@ def forcing_agents(
     """ForcingAggregation agents of MAGICC7, apart from volcanic forcing.
 
     ``emissions`` are in MAGICC7's units, see `magicc7_units`.
-    The patterns in `NORMYEAR_PATTERNS` come from `prescribed` forcing
-    on `years` in ``rf_regions_normyear``, or the closest year.
-    The SOx, BC and OC patterns come from their industrial and biomass forcing
-    in that year, nitrate's from its total forcing,
-    and the direct aerosol pattern from the SOx, BC, OC and dust forcing.
+    `ForcingAggregation` takes the patterns in `NORMYEAR_PATTERNS`
+    from the agents' scaled forcing in its ``pattern_year``.
+    Nitrate's comes from its total forcing on `years` in ``rf_regions_normyear``,
+    or the closest year.
     """
     p = parameters
     agents = [
@@ -916,11 +930,14 @@ def forcing_agents(
             ],
         )
     )
-    patterns = _patterns(p, years, prescribed, emissions, agents)
+    no3 = _nitrate_pattern(p, years, emissions)
     for agent in agents:
         key = _PATTERN_KEYS.get(agent["variable"].removeprefix(f"{ERF}|"))
-        if key in patterns:
-            agent["regional_pattern"] = patterns[key]
+        if key == "no3":
+            agent["regional_pattern"] = no3
+        elif key in NORMYEAR_PATTERNS:
+            agent["pattern_terms"] = _summation(NORMYEAR_PATTERNS[key])
+            agent["pattern_year"] = float(p["rf_regions_normyear"])
     return agents
 
 
@@ -931,49 +948,16 @@ _PATTERN_KEYS = {
 }
 
 
-def _patterns(
+def _nitrate_pattern(
     parameters: Mapping[str, Any],
     years: NDArray[np.float64],
-    prescribed: Mapping[str, NDArray[np.float64]],
     emissions: Mapping[str, NDArray[np.float64]],
-    agents: list[dict[str, Any]],
-) -> dict[str, list[float]]:
-    """Patterns from scaled forcing in ``rf_regions_normyear``."""
+) -> list[float]:
+    """MAGICC7's ``rf_regions_no3``, from nitrate forcing in ``rf_regions_normyear``."""
     p = parameters
     i = int(np.abs(np.asarray(years) - p["rf_regions_normyear"]).argmin())
-    forcing = ForcingAggregationBuilder.from_parameters(
-        {"agents": cast("Any", agents)}
-    ).variable_box_forcing(
-        {child(ERF, name): np.asarray(v) for name, v in prescribed.items()},
-        list(years),
-        [float(years[i])],
-    )
-    boxes = {
-        name.removeprefix(f"{ERF}|"): values[0] for name, values in forcing.items()
-    }
-    patterns = {key: boxes[name].tolist() for key, name in NORMYEAR_PATTERNS.items()}
     args, kwargs = _nitrate_inputs(years, emissions, p)
-    patterns["no3"] = pr.nitrate_pattern(*args, index=i, **kwargs)
-    for key, species in DIRECT_SPECIES.items():
-        fossil, biomass = (
-            boxes[f"{DIRECT}|{species}|{sector}"] for sector in ("Fossil", "Biosphere")
-        )
-        patterns[key] = (fossil + biomass).tolist()
-    patterns["aer_dir"] = _direct_aerosol_pattern(boxes)
-    return patterns
-
-
-def _direct_aerosol_pattern(boxes: Mapping[str, NDArray[np.float64]]) -> list[float]:
-    """MAGICC7's ``rf_regions_aer_dir``: industrial, biomass and dust forcing boxes."""
-
-    def box(species: str, sector: str) -> NDArray[np.float64]:
-        return boxes[f"{DIRECT}|{species}|{sector}"]
-
-    industrial = (box("OC", "Fossil") + box("BC", "Fossil")) + box("SOx", "Fossil")
-    biomass = (box("SOx", "Biosphere") + box("OC", "Biosphere")) + box(
-        "BC", "Biosphere"
-    )
-    return ((industrial + biomass) + boxes[DUST]).tolist()
+    return pr.nitrate_pattern(*args, index=i, **kwargs)
 
 
 def _summation(terms: list[Any]) -> list[Any]:
@@ -981,10 +965,6 @@ def _summation(terms: list[Any]) -> list[Any]:
         _summation(term) if isinstance(term, list) else child(ERF, term)
         for term in terms
     ]
-
-
-def _pattern(patterns: Mapping[str, list[float]], key: str) -> dict[str, Any]:
-    return {"regional_pattern": patterns[key]} if key in patterns else {}
 
 
 def efficacy_climate(climate: Mapping[str, Any]) -> dict[str, Any]:

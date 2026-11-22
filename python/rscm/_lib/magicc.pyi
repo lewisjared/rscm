@@ -1257,6 +1257,9 @@ class ForcingAgent(TypedDict, total=False):
     """Hold the ERF at its value in this year afterwards."""
     relative_to_year: float
     """Subtract the scaled ERF in this year."""
+    pattern_terms: list[ForcingTerm]
+    """Variables whose box ERF in ``pattern_year`` replaces ``regional_pattern``."""
+    pattern_year: float
 
 class Harmonisation(TypedDict, total=False):
     """Harmonisation of an agent's ERF to a target change since pre-industrial."""
@@ -1354,11 +1357,28 @@ class ForcingAggregationBuilder(ComponentBuilder):
         ``inputs`` are on ``time``, and the result has a row for each of ``at``,
         which defaults to ``time``.
         """
-    def internal_efficacies(self, ecs: float, erf_2xco2: float) -> list[float]:
+    def internal_efficacies(
+        self,
+        ecs: float,
+        erf_2xco2: float,
+        inputs: Mapping[str, NDArray[np.float64]] | None = None,
+        time: Sequence[float] | None = None,
+    ) -> list[float]:
         """Return each agent's internal efficacy at climate sensitivity ``ecs``.
 
         ``erf_2xco2`` is the 2xCO2 effective radiative forcing in W/m².
         Without ``climate`` these are the agents' own ``internal_efficacy``.
+        Agents with ``pattern_terms`` read the prescribed ``inputs`` on ``time``.
+        """
+    def patterns(
+        self,
+        inputs: Mapping[str, NDArray[np.float64]] | None = None,
+        time: Sequence[float] | None = None,
+    ) -> list[tuple[float, float, float, float]]:
+        """Return each agent's pattern.
+
+        Agents with ``pattern_terms`` take it from the prescribed ``inputs``
+        on ``time``.
         """
     def build(self) -> RustComponent:
         """Build the forcing aggregation component."""

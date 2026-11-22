@@ -363,9 +363,24 @@ class Reported:
         em = magicc7_emissions(run)
         unscaled = full.prescribed_forcing(run.years, em, p, full.load_inputs(p))
         agents = full.forcing_agents(p, run.years, unscaled, em)
+        erf = {f"{ERF}|{name}": np.asarray(v) for name, v in unscaled.items()}
+        patterns = ForcingAggregationBuilder.from_parameters(
+            {"agents": agents}
+        ).patterns(erf, list(run.years))
+        fixed = [
+            {
+                **{
+                    k: v
+                    for k, v in a.items()
+                    if k not in ("pattern_terms", "pattern_year")
+                },
+                "regional_pattern": pattern,
+            }
+            for a, pattern in zip(agents, patterns, strict=True)
+        ]
         aggregation = ForcingAggregationBuilder.from_parameters(
             {
-                "agents": agents,
+                "agents": fixed,
                 "efficacy_method": full.EFFICACY_METHODS[p["rf_efficacy_apply"]],
                 "climate": full.efficacy_climate(climate),
             }

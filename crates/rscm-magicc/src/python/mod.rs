@@ -374,11 +374,38 @@ impl ForcingAggregationBuilder {
 
     /// Internal efficacy of each agent at equilibrium climate sensitivity `ecs`
     /// and 2xCO2 effective radiative forcing `erf_2xco2`.
-    pub fn internal_efficacies(&self, ecs: f64, erf_2xco2: f64) -> PyResult<Vec<f64>> {
-        ForcingAggregation::from_parameters(self.parameters.clone())
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?
-            .internal_efficacies(ecs, erf_2xco2)
-            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("LAMCALC did not converge"))
+    ///
+    /// Agents with `pattern_terms` take their pattern from the prescribed `inputs` on `time`.
+    #[pyo3(signature = (ecs, erf_2xco2, inputs=None, time=None))]
+    pub fn internal_efficacies(
+        &self,
+        ecs: f64,
+        erf_2xco2: f64,
+        inputs: Option<std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<f64>>>,
+        time: Option<Vec<f64>>,
+    ) -> PyResult<Vec<f64>> {
+        let component = ForcingAggregation::from_parameters(self.parameters.clone())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let series = SeriesLookup::new(inputs, time)?;
+        component
+            .internal_efficacies_from(ecs, erf_2xco2, &|name, _, t| series.at(name, t))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?
+            .ok_or_else(|| PyValueError::new_err("LAMCALC did not converge"))
+    }
+
+    /// Pattern of each agent, from the prescribed `inputs` on `time` for agents with `pattern_terms`.
+    #[pyo3(signature = (inputs=None, time=None))]
+    pub fn patterns(
+        &self,
+        inputs: Option<std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<f64>>>,
+        time: Option<Vec<f64>>,
+    ) -> PyResult<Vec<[f64; 4]>> {
+        let component = ForcingAggregation::from_parameters(self.parameters.clone())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let series = SeriesLookup::new(inputs, time)?;
+        component
+            .patterns(&|name, _, t| series.at(name, t))
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     pub fn build(&self) -> PyResult<PyRustComponent> {

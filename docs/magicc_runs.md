@@ -126,6 +126,8 @@ so changing those on the built configuration needs no new translation.
 It also holds land-use and dust forcing after `constant_after_year`,
 spreads global dust forcing with `spreading_pattern`,
 and takes BC on snow relative to 1750 with `relative_to_year`.
+The regional patterns MAGICC7 takes from these agents' forcing in `rf_regions_normyear`
+come from `pattern_terms` in `ForcingAggregation` too.
 `full.natural_emissions` calculates the natural CH4 and N2O emissions that close MAGICC7's budget.
 They are stated parameters of the components, so they can be changed on the configuration.
 `N2OChemistryBuilder.natural_emissions_in_balance` instead gives the natural N2O emissions

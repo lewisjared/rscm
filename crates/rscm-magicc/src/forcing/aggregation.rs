@@ -96,6 +96,72 @@ impl ForcingAggregation {
         ecs: FloatValue,
         erf_2xco2: FloatValue,
     ) -> Option<Vec<FloatValue>> {
+        let patterns: Vec<_> = self
+            .parameters
+            .agents
+            .iter()
+            .map(|a| a.regional_pattern)
+            .collect();
+        self.internal_efficacies_with(ecs, erf_2xco2, &patterns)
+    }
+
+    /// Internal efficacies as `internal_efficacies`,
+    /// with the patterns of agents with `pattern_terms` from the ERF `lookup` reads.
+    pub fn internal_efficacies_from(
+        &self,
+        ecs: FloatValue,
+        erf_2xco2: FloatValue,
+        lookup: &Lookup,
+    ) -> RSCMResult<Option<Vec<FloatValue>>> {
+        let patterns = self.patterns(lookup)?;
+        Ok(self.internal_efficacies_with(ecs, erf_2xco2, &patterns))
+    }
+
+    /// Pattern of each agent: its `pattern_terms` summed in `pattern_year`, or `regional_pattern`.
+    pub fn patterns(&self, lookup: &Lookup) -> RSCMResult<Vec<[FloatValue; 4]>> {
+        let agents = &self.parameters.agents;
+        let mut wanted: Vec<(&str, Time)> = Vec::new();
+        for agent in agents {
+            let mut names = Vec::new();
+            term_names(&agent.pattern_terms, &mut names);
+            if let Some(year) = agent.pattern_year {
+                wanted.extend(names.into_iter().map(|name| (name, year)));
+            }
+        }
+        let mut boxes: Vec<((String, Time), [FloatValue; 4])> = Vec::new();
+        let mut years: Vec<Time> = wanted.iter().map(|(_, year)| *year).collect();
+        years.sort_by(FloatValue::total_cmp);
+        years.dedup();
+        for year in years {
+            let has = |name: &str| wanted.contains(&(name, year));
+            for (name, values) in self.variable_box_forcing(lookup, &has, &[year])? {
+                boxes.push(((name, year), values[0]));
+            }
+        }
+        let at = |name: &str, year: Time| {
+            boxes
+                .iter()
+                .find(|((n, y), _)| n == name && *y == year)
+                .map_or([FloatValue::NAN; 4], |(_, b)| *b)
+        };
+        Ok(agents
+            .iter()
+            .map(|agent| match agent.pattern_year {
+                Some(year) => fold_terms(&agent.pattern_terms, &|name| at(name, year), &|a, b| {
+                    std::array::from_fn(|i| a[i] + b[i])
+                })
+                .unwrap_or(agent.regional_pattern),
+                None => agent.regional_pattern,
+            })
+            .collect())
+    }
+
+    fn internal_efficacies_with(
+        &self,
+        ecs: FloatValue,
+        erf_2xco2: FloatValue,
+        patterns: &[[FloatValue; 4]],
+    ) -> Option<Vec<FloatValue>> {
         let agents = &self.parameters.agents;
         let Some(climate) = &self.parameters.climate else {
             return Some(agents.iter().map(|a| a.internal_efficacy).collect());
@@ -115,7 +181,8 @@ impl ForcingAggregation {
         Some(
             agents
                 .iter()
-                .map(|a| {
+                .zip(patterns)
+                .map(|(a, pattern)| {
                     if a.use_co2_internal_efficacy {
                         return result.co2_internal_efficacy;
                     }
@@ -123,7 +190,7 @@ impl ForcingAggregation {
                         erf_2xco2,
                         &result.matrix_inverse,
                         grid.weights(),
-                        &a.regional_pattern,
+                        pattern,
                         ecs,
                     )
                 })
@@ -131,19 +198,21 @@ impl ForcingAggregation {
         )
     }
 
-    fn initial_internal_efficacies(&self) -> Vec<FloatValue> {
+    fn initial_internal_efficacies(&self, lookup: &Lookup) -> RSCMResult<Vec<FloatValue>> {
         let (ecs, q) = self
             .parameters
             .climate
             .as_ref()
             .map_or((FloatValue::NAN, FloatValue::NAN), |c| (c.ecs, c.erf_2xco2));
-        self.internal_efficacies(ecs, q).unwrap_or_else(|| {
-            self.parameters
-                .agents
-                .iter()
-                .map(|a| a.internal_efficacy)
-                .collect()
-        })
+        Ok(self
+            .internal_efficacies_from(ecs, q, lookup)?
+            .unwrap_or_else(|| {
+                self.parameters
+                    .agents
+                    .iter()
+                    .map(|a| a.internal_efficacy)
+                    .collect()
+            }))
     }
 
     /// Parameters of this component.
@@ -169,7 +238,7 @@ impl ForcingAggregation {
             .aggregate_with(
                 &forcing,
                 &|agent| agent_inputs(agent).len(),
-                &self.initial_internal_efficacies(),
+                &self.initial_internal_efficacies(lookup)?,
             )
             .0)
     }
@@ -417,6 +486,15 @@ fn sum(terms: impl Iterator<Item = Forcing>) -> Forcing {
         .unwrap_or((0.0, [0.0; 4]))
 }
 
+fn term_names<'a>(terms: &'a [ForcingTerm], out: &mut Vec<&'a str>) {
+    for term in terms {
+        match term {
+            ForcingTerm::Agent(name) => out.push(name),
+            ForcingTerm::Sum(nested) => term_names(nested, out),
+        }
+    }
+}
+
 fn fold_terms<T: Copy>(
     terms: &[ForcingTerm],
     agent: &dyn Fn(&str) -> T,
@@ -487,6 +565,15 @@ fn validate_scaling(parameters: &ForcingAggregationParameters) -> RSCMResult<()>
         }
         if agent.relative_to_year.is_some() && !(single && agent.regional) {
             return fail("relative_to_year needs a regional agent without sum_of");
+        }
+        let mut names = Vec::new();
+        term_names(&agent.pattern_terms, &mut names);
+        if names.is_empty() != agent.pattern_year.is_none() {
+            return fail("pattern_terms and pattern_year need each other");
+        }
+        let variables: Vec<&String> = agents.iter().flat_map(agent_inputs).collect();
+        if let Some(name) = names.iter().find(|n| !variables.iter().any(|v| v == *n)) {
+            return fail(&format!("pattern_terms names no agent variable {name}"));
         }
         let from = &agent.sum_of_scale_from;
         if !from.is_empty() && from.len() != agent.sum_of.len() {
@@ -585,7 +672,7 @@ impl Component for ForcingAggregation {
         };
         let forcing = self.variable_forcing(&values, &lookup, t_next)?;
         let internal = match &self.parameters.climate {
-            None => self.initial_internal_efficacies(),
+            None => self.initial_internal_efficacies(&lookup)?,
             Some(climate) => {
                 let ecs = input_state
                     .get_scalar_window(EQUILIBRIUM_CLIMATE_SENSITIVITY)
@@ -596,9 +683,10 @@ impl Component for ForcingAggregation {
                 } else {
                     (climate.ecs, climate.erf_2xco2)
                 };
-                self.internal_efficacies(ecs, q).ok_or_else(|| {
-                    RSCMError::Error(format!("LAMCALC failed to converge for ECS={ecs}"))
-                })?
+                self.internal_efficacies_from(ecs, q, &lookup)?
+                    .ok_or_else(|| {
+                        RSCMError::Error(format!("LAMCALC failed to converge for ECS={ecs}"))
+                    })?
             }
         };
         let ((total, adjusted), subtotals) =
@@ -642,6 +730,8 @@ mod tests {
             spreading_pattern: None,
             constant_after_year: None,
             relative_to_year: None,
+            pattern_terms: Vec::new(),
+            pattern_year: None,
         }
     }
 
@@ -1004,6 +1094,57 @@ mod tests {
         let c = component(vec![snow], EfficacyMethod::None);
         let (_, boxes) = c.aggregate(&[vec![4.0; 4]], &rising(1.0), 2003.0).unwrap();
         assert_eq!(boxes, [4.0 * 0.1 - 0.1; 4]);
+    }
+
+    #[test]
+    fn pattern_terms_sum_scaled_boxes_in_pattern_year() {
+        let mut fossil = named("fossil", true);
+        fossil.scale = 2.0;
+        let mut biomass = named("biomass", true);
+        biomass.sum_of = vec!["b".into()];
+        biomass.sum_of_scale_from = vec!["fossil".into()];
+        let mut summed = named("summed", true);
+        summed.pattern_terms = vec![ForcingTerm::Sum(vec![
+            ForcingTerm::Agent("fossil".into()),
+            ForcingTerm::Agent("b".into()),
+        ])];
+        summed.pattern_year = Some(2003.0);
+        let c = ForcingAggregation::from_parameters(ForcingAggregationParameters {
+            agents: vec![fossil, biomass, summed.clone()],
+            climate: Some(EfficacyClimate::default()),
+            ..Default::default()
+        })
+        .unwrap();
+        let patterns = c.patterns(&rising(1.0)).unwrap();
+        assert_eq!(patterns[2], [16.0; 4]);
+        let climate = EfficacyClimate::default();
+        let from_terms = c
+            .internal_efficacies_from(climate.ecs, climate.erf_2xco2, &rising(1.0))
+            .unwrap()
+            .unwrap();
+        summed.pattern_terms = Vec::new();
+        summed.pattern_year = None;
+        summed.regional_pattern = [16.0; 4];
+        let named_pattern = ForcingAggregation::from_parameters(ForcingAggregationParameters {
+            agents: vec![named("fossil", true), named("b", true), summed],
+            climate: Some(climate.clone()),
+            ..Default::default()
+        })
+        .unwrap()
+        .internal_efficacies(climate.ecs, climate.erf_2xco2)
+        .unwrap();
+        assert_eq!(from_terms[2], named_pattern[2]);
+    }
+
+    #[test]
+    fn pattern_terms_need_pattern_year() {
+        let mut agent = named("a", true);
+        agent.pattern_terms = vec![ForcingTerm::Agent("a".into())];
+        let result = ForcingAggregation::from_parameters(ForcingAggregationParameters {
+            agents: vec![agent],
+            ..Default::default()
+        });
+        assert!(result.is_err());
     }
 
     #[test]
