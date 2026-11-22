@@ -409,7 +409,8 @@ def _first_fgas_forcing(
 
     def solve(key: str) -> dict[str, StateValue]:
         component = components[key]
-        for d in component.definitions():
+        definitions = component.definitions()
+        for d in definitions:
             if d.role == VariableRole.Output or d.name in collection:
                 continue
             if d.name in prescribed:
@@ -421,11 +422,12 @@ def _first_fgas_forcing(
                 values[0] = initial_values[d.name]
                 add(d.name, values, d.unit)
         out = component.solve(t_current, t_next, collection)
+        units = {d.name: d.unit for d in definitions}
         for name, value in out.items():
             if name not in collection:
                 row = _values(value)
                 held = np.tile(row, (n, 1)) if len(row) > 1 else np.full(n, row[0])
-                add(name, held, _unit(component, name))
+                add(name, held, units[name])
         return out
 
     for key in _UPSTREAM:
@@ -438,10 +440,6 @@ def _first_fgas_forcing(
 def _values(value: StateValue) -> list[float]:
     grid = value.as_four_box() or value.as_hemispheric()
     return grid.to_list() if grid is not None else [value.to_scalar()]
-
-
-def _unit(component: RustComponent, name: str) -> str:
-    return next(d.unit for d in component.definitions() if d.name == name)
 
 
 def _global(values: NDArray[np.float64]) -> float:
