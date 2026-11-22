@@ -47,6 +47,20 @@ fn validate_points(points: &Array1<Time>, noun: &str) -> RSCMResult<()> {
     Ok(())
 }
 
+/// The index `TimeAxis::index_of` finds for `value`, guessed from the first step,
+/// or None when the guess does not check out.
+fn regular_index(values: &[Time], value: Time) -> Option<usize> {
+    let (&first, &second) = (values.first()?, values.get(1)?);
+    let guess = ((value - first) / (second - first)).round();
+    if !(guess >= 0.0 && guess < values.len() as Time) {
+        return None;
+    }
+    let index = guess as usize;
+    let matches = (values[index] - value).abs() < 1e-10;
+    let after_previous = index == 0 || values[index - 1] - value <= -1e-10;
+    (matches && after_previous).then_some(index)
+}
+
 /// Axis for a time series
 ///
 /// The time values must be monotonically increasing with
@@ -243,6 +257,9 @@ impl TimeAxis {
         // Values strictly increase, so every value before the first match is below it
         let values = self.values();
         let values = values.as_slice().expect("time axis values are contiguous");
+        if let Some(index) = regular_index(values, value) {
+            return Some(index);
+        }
         let index = values.partition_point(|v| *v - value <= -1e-10);
         values
             .get(index)

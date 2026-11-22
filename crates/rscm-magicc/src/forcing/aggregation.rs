@@ -49,6 +49,8 @@ use rscm_core::state::{FourBoxSlice, VariableSource};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
+use std::any::Any;
+use std::sync::OnceLock;
 
 /// Aggregates agent ERF into four-box efficacy-adjusted forcing.
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentMetadata)]
@@ -113,12 +115,39 @@ impl ForcingAggregation {
         erf_2xco2: FloatValue,
         lookup: &Lookup,
     ) -> RSCMResult<Option<Vec<FloatValue>>> {
-        let patterns = self.patterns(lookup)?;
-        Ok(self.internal_efficacies_with(ecs, erf_2xco2, &patterns))
+        let k = self.constants();
+        let patterns = self.patterns_with(lookup, &k)?;
+        Ok(self.internal_efficacies_with(ecs, erf_2xco2, patterns))
     }
 
     /// Pattern of each agent: its `pattern_terms` summed in `pattern_year`, or `regional_pattern`.
     pub fn patterns(&self, lookup: &Lookup) -> RSCMResult<Vec<[FloatValue; 4]>> {
+        Ok(self.patterns_with(lookup, &self.constants())?.clone())
+    }
+
+    fn constants(&self) -> Constants {
+        let n = self
+            .parameters
+            .agents
+            .iter()
+            .map(|a| agent_inputs(a).len())
+            .sum();
+        Constants {
+            held: (0..n).map(|_| OnceLock::new()).collect(),
+            base: (0..n).map(|_| OnceLock::new()).collect(),
+            ..Default::default()
+        }
+    }
+
+    fn patterns_with<'k>(
+        &self,
+        lookup: &Lookup,
+        k: &'k Constants,
+    ) -> RSCMResult<&'k Vec<[FloatValue; 4]>> {
+        memo_ref(&k.patterns, || self.compute_patterns(lookup, k))
+    }
+
+    fn compute_patterns(&self, lookup: &Lookup, k: &Constants) -> RSCMResult<Vec<[FloatValue; 4]>> {
         let agents = &self.parameters.agents;
         let mut wanted: Vec<(&str, Time)> = Vec::new();
         for agent in agents {
@@ -134,7 +163,7 @@ impl ForcingAggregation {
         years.dedup();
         for year in years {
             let has = |name: &str| wanted.contains(&(name, year));
-            for (name, values) in self.variable_box_forcing(lookup, &has, &[year])? {
+            for (name, values) in self.variable_box_forcing_with(lookup, &has, &[year], k)? {
                 boxes.push(((name, year), values[0]));
             }
         }
@@ -198,21 +227,28 @@ impl ForcingAggregation {
         )
     }
 
-    fn initial_internal_efficacies(&self, lookup: &Lookup) -> RSCMResult<Vec<FloatValue>> {
-        let (ecs, q) = self
-            .parameters
-            .climate
-            .as_ref()
-            .map_or((FloatValue::NAN, FloatValue::NAN), |c| (c.ecs, c.erf_2xco2));
-        Ok(self
-            .internal_efficacies_from(ecs, q, lookup)?
-            .unwrap_or_else(|| {
-                self.parameters
-                    .agents
-                    .iter()
-                    .map(|a| a.internal_efficacy)
-                    .collect()
-            }))
+    fn initial_internal_efficacies<'k>(
+        &self,
+        lookup: &Lookup,
+        k: &'k Constants,
+    ) -> RSCMResult<&'k Vec<FloatValue>> {
+        memo_ref(&k.initial_internal, || {
+            let (ecs, q) = self
+                .parameters
+                .climate
+                .as_ref()
+                .map_or((FloatValue::NAN, FloatValue::NAN), |c| (c.ecs, c.erf_2xco2));
+            let patterns = self.patterns_with(lookup, k)?;
+            Ok(self
+                .internal_efficacies_with(ecs, q, patterns)
+                .unwrap_or_else(|| {
+                    self.parameters
+                        .agents
+                        .iter()
+                        .map(|a| a.internal_efficacy)
+                        .collect()
+                }))
+        })
     }
 
     /// Parameters of this component.
@@ -233,12 +269,13 @@ impl ForcingAggregation {
         lookup: &Lookup,
         t: Time,
     ) -> RSCMResult<(FloatValue, [FloatValue; 4])> {
-        let forcing = self.variable_forcing(values, lookup, t)?;
+        let k = self.constants();
+        let forcing = self.variable_forcing(values, lookup, t, &k)?;
         Ok(self
             .aggregate_with(
                 &forcing,
                 &|agent| agent_inputs(agent).len(),
-                &self.initial_internal_efficacies(lookup)?,
+                self.initial_internal_efficacies(lookup, &k)?,
             )
             .0)
     }
@@ -247,6 +284,18 @@ impl ForcingAggregation {
     ///
     /// A harmonised agent's scale comes from its prescribed variable, which `lookup` reads.
     pub fn variable_scales(&self, lookup: &Lookup) -> RSCMResult<Vec<FloatValue>> {
+        Ok(self.scales_with(lookup, &self.constants())?.clone())
+    }
+
+    fn scales_with<'k>(
+        &self,
+        lookup: &Lookup,
+        k: &'k Constants,
+    ) -> RSCMResult<&'k Vec<FloatValue>> {
+        memo_ref(&k.scales, || self.compute_scales(lookup))
+    }
+
+    fn compute_scales(&self, lookup: &Lookup) -> RSCMResult<Vec<FloatValue>> {
         let agents = &self.parameters.agents;
         let own = agents
             .iter()
@@ -307,11 +356,12 @@ impl ForcingAggregation {
     /// Scaled global and box ERF of each agent variable at time `t`.
     fn variable_forcing(
         &self,
-        values: &[Vec<FloatValue>],
+        values: &[impl AsRef<[FloatValue]>],
         lookup: &Lookup,
         t: Time,
+        k: &Constants,
     ) -> RSCMResult<Vec<Forcing>> {
-        let scales = self.variable_scales(lookup)?;
+        let scales = self.scales_with(lookup, k)?;
         let variables: Vec<_> = self
             .parameters
             .agents
@@ -329,12 +379,14 @@ impl ForcingAggregation {
             .into_iter()
             .zip(values)
             .zip(scales)
-            .map(|(((agent, name), value), scale)| {
-                self.held_forcing(agent, name, value, scale, lookup, t)
+            .enumerate()
+            .map(|(j, (((agent, name), value), &scale))| {
+                self.held_forcing(agent, name, value.as_ref(), scale, lookup, t, k.slot(j))
             })
             .collect()
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn held_forcing(
         &self,
         agent: &ForcingAgent,
@@ -343,16 +395,16 @@ impl ForcingAggregation {
         scale: FloatValue,
         lookup: &Lookup,
         t: Time,
+        (held, base): Slot,
     ) -> RSCMResult<Forcing> {
-        let held = match agent.constant_after_year {
-            Some(year) if t > year => Some(lookup(name, agent.regional, year)?),
-            _ => None,
+        let value = match agent.constant_after_year {
+            Some(year) if t > year => memo_ref(held, || lookup(name, agent.regional, year))?,
+            _ => value,
         };
-        let value = held.as_deref().unwrap_or(value);
         let Some(year) = agent.relative_to_year else {
             return Ok(self.scaled_forcing(agent, value, scale));
         };
-        let base = lookup(name, agent.regional, year)?;
+        let base = memo_ref(base, || lookup(name, agent.regional, year))?;
         let boxes: [FloatValue; 4] = std::array::from_fn(|i| value[i] * scale - base[i] * scale);
         Ok((self.fold(&boxes), boxes))
     }
@@ -366,7 +418,17 @@ impl ForcingAggregation {
         has: &dyn Fn(&str) -> bool,
         times: &[Time],
     ) -> RSCMResult<Vec<(String, Vec<[FloatValue; 4]>)>> {
-        let scales = self.variable_scales(lookup)?;
+        self.variable_box_forcing_with(lookup, has, times, &self.constants())
+    }
+
+    fn variable_box_forcing_with(
+        &self,
+        lookup: &Lookup,
+        has: &dyn Fn(&str) -> bool,
+        times: &[Time],
+        k: &Constants,
+    ) -> RSCMResult<Vec<(String, Vec<[FloatValue; 4]>)>> {
+        let scales = self.scales_with(lookup, k)?;
         let variables = self
             .parameters
             .agents
@@ -374,13 +436,16 @@ impl ForcingAggregation {
             .flat_map(|agent| agent_inputs(agent).iter().map(move |name| (agent, name)));
         variables
             .zip(scales)
-            .filter(|((_, name), _)| has(name))
-            .map(|((agent, name), scale)| {
+            .enumerate()
+            .filter(|(_, ((_, name), _))| has(name))
+            .map(|(j, ((agent, name), &scale))| {
                 let boxes = times
                     .iter()
                     .map(|&t| {
                         let value = lookup(name, agent.regional, t)?;
-                        Ok(self.held_forcing(agent, name, &value, scale, lookup, t)?.1)
+                        Ok(self
+                            .held_forcing(agent, name, &value, scale, lookup, t, k.slot(j))?
+                            .1)
                     })
                     .collect::<RSCMResult<Vec<_>>>()?;
                 Ok((name.clone(), boxes))
@@ -472,6 +537,59 @@ impl ForcingAggregation {
 
 /// Global ERF and efficacy-adjusted (or plain) box forcing.
 type Forcing = (FloatValue, [FloatValue; 4]);
+
+/// A variable's value in a step: its first `.1` entries.
+struct StepValue([FloatValue; 4], usize);
+
+impl AsRef<[FloatValue]> for StepValue {
+    fn as_ref(&self) -> &[FloatValue] {
+        &self.0[..self.1]
+    }
+}
+
+/// A variable's `constant_after_year` and `relative_to_year` values.
+type Slot<'k> = (&'k OnceLock<Vec<FloatValue>>, &'k OnceLock<Vec<FloatValue>>);
+
+/// Values that are the same at every step of a run, each computed when first needed.
+#[derive(Debug, Default)]
+struct Constants {
+    scales: OnceLock<Vec<FloatValue>>,
+    patterns: OnceLock<Vec<[FloatValue; 4]>>,
+    initial_internal: OnceLock<Vec<FloatValue>>,
+    held: Vec<OnceLock<Vec<FloatValue>>>,
+    base: Vec<OnceLock<Vec<FloatValue>>>,
+}
+
+impl Constants {
+    fn slot(&self, variable: usize) -> Slot<'_> {
+        (&self.held[variable], &self.base[variable])
+    }
+}
+
+fn memo_ref<T>(cell: &OnceLock<T>, f: impl FnOnce() -> RSCMResult<T>) -> RSCMResult<&T> {
+    if let Some(value) = cell.get() {
+        return Ok(value);
+    }
+    let value = f()?;
+    Ok(cell.get_or_init(|| value))
+}
+
+/// Internal state of [`ForcingAggregation`]: the run constants of its prescribed inputs.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct ForcingAggregationState {
+    #[serde(skip)]
+    constants: Option<Constants>,
+}
+
+#[typetag::serde(name = "magicc.ForcingAggregationState")]
+impl ComponentState for ForcingAggregationState {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
 
 fn sum(terms: impl Iterator<Item = Forcing>) -> Forcing {
     terms
@@ -596,6 +714,10 @@ fn agent_inputs(agent: &ForcingAgent) -> &[String] {
 
 #[typetag::serde(name = "magicc.ForcingAggregation")]
 impl Component for ForcingAggregation {
+    fn create_initial_state(&self) -> Box<dyn ComponentState> {
+        Box::new(ForcingAggregationState::default())
+    }
+
     fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions: Vec<_> = self
             .parameters
@@ -632,10 +754,17 @@ impl Component for ForcingAggregation {
         _t_current: Time,
         t_next: Time,
         input_state: &InputState,
-        _internal_state: &mut dyn ComponentState,
+        internal_state: &mut dyn ComponentState,
         out: &mut OutputWriter,
     ) -> RSCMResult<()> {
-        let values: Vec<Vec<FloatValue>> = self
+        let state = internal_state
+            .as_any_mut()
+            .downcast_mut::<ForcingAggregationState>()
+            .ok_or_else(|| {
+                RSCMError::Error("Internal state should be ForcingAggregationState".into())
+            })?;
+        let k = &*state.constants.get_or_insert_with(|| self.constants());
+        let values: Vec<StepValue> = self
             .parameters
             .agents
             .iter()
@@ -643,9 +772,9 @@ impl Component for ForcingAggregation {
             .map(|(agent, name)| {
                 if agent.regional {
                     let window = input_state.get_four_box_window(name);
-                    REGIONS.map(|region| window.get(region)).to_vec()
+                    StepValue(REGIONS.map(|region| window.get(region)), 4)
                 } else {
-                    vec![input_state.get_scalar_window(name).get()]
+                    StepValue([input_state.get_scalar_window(name).get(); 4], 1)
                 }
             })
             .collect();
@@ -663,9 +792,10 @@ impl Component for ForcingAggregation {
                 Ok(vec![window.interpolate(t)?])
             }
         };
-        let forcing = self.variable_forcing(&values, &lookup, t_next)?;
+        let forcing = self.variable_forcing(&values, &lookup, t_next, k)?;
+        let drifting;
         let internal = match &self.parameters.climate {
-            None => self.initial_internal_efficacies(&lookup)?,
+            None => self.initial_internal_efficacies(&lookup, k)?,
             Some(climate) => {
                 let ecs = input_state
                     .get_scalar_window(EQUILIBRIUM_CLIMATE_SENSITIVITY)
@@ -676,14 +806,17 @@ impl Component for ForcingAggregation {
                 } else {
                     (climate.ecs, climate.erf_2xco2)
                 };
-                self.internal_efficacies_from(ecs, q, &lookup)?
+                let patterns = self.patterns_with(&lookup, k)?;
+                drifting = self
+                    .internal_efficacies_with(ecs, q, patterns)
                     .ok_or_else(|| {
                         RSCMError::Error(format!("LAMCALC failed to converge for ECS={ecs}"))
-                    })?
+                    })?;
+                &drifting
             }
         };
         let ((total, adjusted), subtotals) =
-            self.aggregate_with(&forcing, &|agent| agent_inputs(agent).len(), &internal);
+            self.aggregate_with(&forcing, &|agent| agent_inputs(agent).len(), internal);
         out.set(ERF, total);
         subtotals.write_to(out);
         out.set(EFFICACY_ADJUSTED_ERF, FourBoxSlice::from_array(adjusted));

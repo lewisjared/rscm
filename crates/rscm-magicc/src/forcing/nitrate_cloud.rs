@@ -29,7 +29,7 @@
 
 use super::REGIONS;
 use crate::parameters::{ForcingTarget, NitrateCloudForcingParameters};
-use crate::EMISSION_SECTORS;
+use crate::{EMISSION_SECTORS, NH3_SECTORS, NOX_SECTORS};
 use rscm_core::component::{
     Component, ComponentState, InputState, OutputWriter, VariableDefinition,
 };
@@ -42,6 +42,8 @@ use rscm_core::state::{FourBoxSlice, VariableSource};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentMetadata;
 use serde::{Deserialize, Serialize};
+use std::any::Any;
+use std::sync::OnceLock;
 
 use crate::reference::require_annual;
 
@@ -78,37 +80,74 @@ pub struct NitrateCloud {
 /// A cloud-active component: its optical thickness segment and the emissions that extend it.
 struct CloudComponent {
     species: &'static str,
+    /// `optical_thickness_name(species)`, spelt out so steps need not build it
+    thickness: &'static str,
     emissions: Option<&'static str>,
 }
 
-const fn emitted(species: &'static str, emissions: &'static str) -> CloudComponent {
+const fn emitted(
+    species: &'static str,
+    thickness: &'static str,
+    emissions: &'static str,
+) -> CloudComponent {
     CloudComponent {
         species,
+        thickness,
         emissions: Some(emissions),
     }
 }
 
-const fn held(species: &'static str) -> CloudComponent {
+const fn held(species: &'static str, thickness: &'static str) -> CloudComponent {
     CloudComponent {
         species,
+        thickness,
         emissions: None,
     }
 }
 
 const BC_GROUP: [CloudComponent; 2] = [
-    emitted("BC|Fossil", "Emissions|BC|Fossil"),
-    emitted("BC|Biosphere", "Emissions|BC|Biosphere"),
+    emitted(
+        "BC|Fossil",
+        "Optical Thickness|BC|Fossil",
+        "Emissions|BC|Fossil",
+    ),
+    emitted(
+        "BC|Biosphere",
+        "Optical Thickness|BC|Biosphere",
+        "Emissions|BC|Biosphere",
+    ),
 ];
 const OC_GROUP: [CloudComponent; 3] = [
-    emitted("OC|Fossil", "Emissions|OC|Fossil"),
-    emitted("OC|Biosphere", "Emissions|OC|Biosphere"),
-    held("OC|Natural"),
+    emitted(
+        "OC|Fossil",
+        "Optical Thickness|OC|Fossil",
+        "Emissions|OC|Fossil",
+    ),
+    emitted(
+        "OC|Biosphere",
+        "Optical Thickness|OC|Biosphere",
+        "Emissions|OC|Biosphere",
+    ),
+    held("OC|Natural", "Optical Thickness|OC|Natural"),
 ];
 const SOX_GROUP: [CloudComponent; 2] = [
-    emitted("SOx|Fossil", "Emissions|SOx|Fossil"),
-    emitted("SOx|Biosphere", "Emissions|SOx|Biosphere"),
+    emitted(
+        "SOx|Fossil",
+        "Optical Thickness|SOx|Fossil",
+        "Emissions|SOx|Fossil",
+    ),
+    emitted(
+        "SOx|Biosphere",
+        "Optical Thickness|SOx|Biosphere",
+        "Emissions|SOx|Biosphere",
+    ),
 ];
-const SEA_SALT_GROUP: [CloudComponent; 1] = [held("Sea Salt")];
+const SEA_SALT_GROUP: [CloudComponent; 1] = [held("Sea Salt", "Optical Thickness|Sea Salt")];
+const SOX_SECTORS: [&str; 2] = ["Emissions|SOx|Fossil", "Emissions|SOx|Biosphere"];
+// First switch slot of each group, then nitrate's.
+const GROUP_SLOTS: [usize; 4] = [0, 2, 5, 7];
+const NITRATE_SLOT: usize = 8;
+const SLOTS: usize = 9;
 const SOX_BIOSPHERE: &str = "SOx|Biosphere";
 const BC_FOSSIL: &str = "BC|Fossil";
 
@@ -118,13 +157,12 @@ pub fn optical_thickness_name(species: &str) -> String {
     child(OPTICAL_THICKNESS, species)
 }
 
-fn optical_thickness_species() -> impl Iterator<Item = &'static str> {
+fn cloud_components() -> impl Iterator<Item = &'static CloudComponent> {
     BC_GROUP
         .iter()
         .chain(&OC_GROUP)
         .chain(&SOX_GROUP)
         .chain(&SEA_SALT_GROUP)
-        .map(|c| c.species)
 }
 
 fn emissions_names() -> Vec<String> {
@@ -191,7 +229,16 @@ impl NitrateCloudForcing {
 
     /// Nitrate and cloud albedo forcing in `year`.
     pub fn forcing(&self, drivers: &Drivers, year: Time) -> RSCMResult<NitrateCloud> {
-        let c = Calc::new(&self.parameters, drivers);
+        self.forcing_with(drivers, year, &Constants::default())
+    }
+
+    fn forcing_with(
+        &self,
+        drivers: &Drivers,
+        year: Time,
+        constants: &Constants,
+    ) -> RSCMResult<NitrateCloud> {
+        let c = Calc::new(&self.parameters, drivers, constants);
         let (nitrate_fossil, nitrate_biosphere) = c.nitrate_sources(year)?;
         Ok(NitrateCloud {
             nitrate_fossil,
@@ -205,15 +252,63 @@ impl NitrateCloudForcing {
     /// MAGICC7 overwrites the configured pattern with this before its run,
     /// and uses it for nitrate's internal efficacy.
     pub fn nitrate_pattern(&self, drivers: &Drivers, year: Time) -> RSCMResult<Boxes> {
-        let c = Calc::new(&self.parameters, drivers);
+        let constants = Constants::default();
+        let c = Calc::new(&self.parameters, drivers, &constants);
         let (rf, total) = c.nitrate_total(c.at(year), c.nitrate_factor(true)?)?;
         Ok(total.map(|b| b / rf))
     }
 }
 
+/// Values that are the same in every year of a run, each computed when first needed.
+#[derive(Debug, Default)]
+struct Constants {
+    alpha_first: OnceLock<FloatValue>,
+    nitrate_factor: OnceLock<FloatValue>,
+    nitrate_norm: OnceLock<FloatValue>,
+    group_norm: [OnceLock<FloatValue>; 4],
+    at_switch: [OnceLock<Boxes>; SLOTS],
+    base: [OnceLock<FloatValue>; SLOTS],
+    reference: OnceLock<Boxes>,
+    at_pattern: OnceLock<Boxes>,
+    cloud_scale: OnceLock<FloatValue>,
+}
+
+fn memo<T: Copy>(cell: &OnceLock<T>, f: impl FnOnce() -> RSCMResult<T>) -> RSCMResult<T> {
+    if let Some(value) = cell.get() {
+        return Ok(*value);
+    }
+    let value = f()?;
+    Ok(*cell.get_or_init(|| value))
+}
+
+/// Internal state of [`NitrateCloudForcing`]: the run constants of its prescribed inputs.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct NitrateCloudState {
+    #[serde(skip)]
+    constants: Constants,
+}
+
+#[typetag::serde(name = "magicc.NitrateCloudState")]
+impl ComponentState for NitrateCloudState {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+/// Fossil and biosphere NOx, NH3 and SOx emissions in a year.
+struct Precursors {
+    nox: [FloatValue; 2],
+    nh3: [FloatValue; 2],
+    sox: [FloatValue; 2],
+}
+
 struct Calc<'a> {
     p: &'a NitrateCloudForcingParameters,
     d: &'a Drivers<'a>,
+    k: &'a Constants,
     area: Boxes,
 }
 
@@ -231,10 +326,11 @@ fn add(a: Boxes, b: Boxes) -> Boxes {
 }
 
 impl<'a> Calc<'a> {
-    fn new(p: &'a NitrateCloudForcingParameters, d: &'a Drivers<'a>) -> Self {
+    fn new(p: &'a NitrateCloudForcingParameters, d: &'a Drivers<'a>, k: &'a Constants) -> Self {
         Self {
             p,
             d,
+            k,
             area: area_fractions(p.nh_land_fraction, p.sh_land_fraction),
         }
     }
@@ -254,28 +350,33 @@ impl<'a> Calc<'a> {
         (self.d.emissions)(name, year)
     }
 
-    fn sectors(&self, gas: &str, year: Time) -> RSCMResult<[FloatValue; 2]> {
-        Ok([
-            self.e(&child(gas, "Fossil"), year)?,
-            self.e(&child(gas, "Biosphere"), year)?,
-        ])
+    fn precursors(&self, year: Time) -> RSCMResult<Precursors> {
+        let sectors = |[fossil, biosphere]: [&str; 2]| -> RSCMResult<[FloatValue; 2]> {
+            Ok([self.e(fossil, year)?, self.e(biosphere, year)?])
+        };
+        Ok(Precursors {
+            nox: sectors(NOX_SECTORS)?,
+            nh3: sectors(NH3_SECTORS)?,
+            sox: sectors(SOX_SECTORS)?,
+        })
     }
 
-    fn alpha(&self, year: Time) -> RSCMResult<FloatValue> {
+    fn alpha(&self, e: &Precursors) -> FloatValue {
         let p = &self.p.nitrate;
-        let [nox_i, nox_b] = self.sectors(EMISSIONS_NOX, year)?;
-        let [nh3_i, nh3_b] = self.sectors(EMISSIONS_NH3, year)?;
-        let [sox_i, sox_b] = self.sectors(EMISSIONS_SOX, year)?;
+        let ([nox_i, nox_b], [nh3_i, nh3_b], [sox_i, sox_b]) = (e.nox, e.nh3, e.sox);
         let n = ((nox_i + nox_b) + p.natural_nox_emissions) / 14.0;
         let a = ((nh3_i + nh3_b) + p.natural_nh3_emissions) / 14.0;
         let s = ((sox_i + sox_b) + self.p.natural_sox_emissions) / 32.07;
-        Ok((n * a) / ((s * p.lambda_so2) / a + 1.0))
+        (n * a) / ((s * p.lambda_so2) / a + 1.0)
     }
 
     /// Global nitrate forcing before the factor.
-    fn nitrate_unscaled(&self, year: Time) -> RSCMResult<FloatValue> {
+    fn nitrate_unscaled(&self, e: &Precursors) -> RSCMResult<FloatValue> {
         let p = &self.p.nitrate;
-        let burden = (p.burden_pi * self.alpha(year)?) / self.alpha(self.d.first)?;
+        let first = memo(&self.k.alpha_first, || {
+            Ok(self.alpha(&self.precursors(self.d.first)?))
+        })?;
+        let burden = (p.burden_pi * self.alpha(e)) / first;
         let optical_thickness = (burden / p.burden_pi).powf(p.burden_to_optical_thickness_exponent);
         Ok(optical_thickness * p.optical_thickness_pi - p.optical_thickness_pi)
     }
@@ -283,10 +384,15 @@ impl<'a> Calc<'a> {
     /// Nitrate factor, which is one where it is zero and only the shape matters.
     fn nitrate_factor(&self, shape_only: bool) -> RSCMResult<FloatValue> {
         let p = &self.p.nitrate;
-        let factor = match &p.harmonisation {
-            Some(h) => h.target / self.nitrate_unscaled(self.at(h.reference_year))?,
-            None => p.scale,
-        };
+        let factor = memo(&self.k.nitrate_factor, || {
+            Ok(match &p.harmonisation {
+                Some(h) => {
+                    h.target
+                        / self.nitrate_unscaled(&self.precursors(self.at(h.reference_year))?)?
+                }
+                None => p.scale,
+            })
+        })?;
         Ok(if shape_only && factor == 0.0 {
             1.0
         } else {
@@ -296,9 +402,16 @@ impl<'a> Calc<'a> {
 
     /// Global nitrate forcing and its boxes, before the source split.
     fn nitrate_total(&self, year: Time, factor: FloatValue) -> RSCMResult<(FloatValue, Boxes)> {
-        let rf = self.nitrate_unscaled(year)? * factor;
-        let [nox_i, nox_b] = self.sectors(EMISSIONS_NOX, year)?;
-        let [nh3_i, nh3_b] = self.sectors(EMISSIONS_NH3, year)?;
+        self.nitrate_total_from(&self.precursors(year)?, factor)
+    }
+
+    fn nitrate_total_from(
+        &self,
+        e: &Precursors,
+        factor: FloatValue,
+    ) -> RSCMResult<(FloatValue, Boxes)> {
+        let rf = self.nitrate_unscaled(e)? * factor;
+        let ([nox_i, nox_b], [nh3_i, nh3_b]) = (e.nox, e.nh3);
         let product = (nh3_i * 0.5 + nh3_b * 0.5) * (nox_b * 0.5 + nox_i * 0.5);
         let denominator = product + product;
         // MAGICC7 sets the forcing to zero without anthropogenic NOx x NH3.
@@ -320,9 +433,9 @@ impl<'a> Calc<'a> {
     }
 
     fn nitrate_sources(&self, year: Time) -> RSCMResult<(Boxes, Boxes)> {
-        let (_, total) = self.nitrate_total(year, self.nitrate_factor(false)?)?;
-        let [nox_i, nox_b] = self.sectors(EMISSIONS_NOX, year)?;
-        let [nh3_i, nh3_b] = self.sectors(EMISSIONS_NH3, year)?;
+        let e = self.precursors(year)?;
+        let (_, total) = self.nitrate_total_from(&e, self.nitrate_factor(false)?)?;
+        let ([nox_i, nox_b], [nh3_i, nh3_b]) = (e.nox, e.nh3);
         let industrial = (nh3_i * 0.5) * (nox_i * 0.5);
         let biomass = (nh3_b * 0.5) * (nox_b * 0.5);
         let share = biomass / (industrial + biomass);
@@ -353,25 +466,26 @@ impl<'a> Calc<'a> {
         &self,
         year: Time,
         switch: Time,
+        slot: usize,
         value: &dyn Fn(Time) -> RSCMResult<Boxes>,
         emissions: &str,
         natural: Option<FloatValue>,
     ) -> RSCMResult<Boxes> {
         if year >= self.d.last && self.d.last > self.d.first {
-            return self.extended(self.d.last - 1.0, switch, value, emissions, natural);
+            return self.extended(self.d.last - 1.0, switch, slot, value, emissions, natural);
         }
         if year < switch {
             return value(year);
         }
-        let at_switch = value(switch)?;
+        let at_switch = memo(&self.k.at_switch[slot], || value(switch))?;
         let drive = self.drive(emissions, natural, year)?;
-        let base = self.base(emissions, natural, switch)?;
+        let base = memo(&self.k.base[slot], || self.base(emissions, natural, switch))?;
         Ok(at_switch.map(|v| (drive * v) / base))
     }
 
-    fn optical_thickness(&self, species: &str, year: Time) -> RSCMResult<Boxes> {
-        let ot = (self.d.optical_thickness)(&optical_thickness_name(species), year)?;
-        Ok(if species == BC_FOSSIL {
+    fn optical_thickness(&self, c: &CloudComponent, year: Time) -> RSCMResult<Boxes> {
+        let ot = (self.d.optical_thickness)(c.thickness, year)?;
+        Ok(if c.species == BC_FOSSIL {
             ot.map(|v| v * self.p.cloud_albedo.bci_soluble_ratio)
         } else {
             ot
@@ -379,21 +493,29 @@ impl<'a> Calc<'a> {
     }
 
     /// Each component of a group in `year`, summed in order.
-    fn group(&self, components: &[CloudComponent], switch: Time, year: Time) -> RSCMResult<Boxes> {
+    fn group(
+        &self,
+        g: usize,
+        components: &[CloudComponent],
+        switch: Time,
+        year: Time,
+    ) -> RSCMResult<Boxes> {
         let switch = self.at(switch);
-        let mut at_switch = [0.0; 4];
-        for c in components {
-            at_switch = add(at_switch, self.optical_thickness(c.species, switch)?);
-        }
-        let norm = self.area_mean(at_switch);
+        let norm = memo(&self.k.group_norm[g], || {
+            let mut at_switch = [0.0; 4];
+            for c in components {
+                at_switch = add(at_switch, self.optical_thickness(c, switch)?);
+            }
+            Ok(self.area_mean(at_switch))
+        })?;
         let mut sum = [0.0; 4];
-        for c in components {
-            let scaled = |y: Time| Ok(self.optical_thickness(c.species, y)?.map(|v| v / norm));
+        for (i, c) in components.iter().enumerate() {
+            let scaled = |y: Time| Ok(self.optical_thickness(c, y)?.map(|v| v / norm));
             let value = match c.emissions {
                 Some(name) => {
                     let natural =
                         (c.species == SOX_BIOSPHERE).then_some(self.p.natural_sox_emissions);
-                    self.extended(year, switch, &scaled, name, natural)?
+                    self.extended(year, switch, GROUP_SLOTS[g] + i, &scaled, name, natural)?
                 }
                 None => scaled(year)?,
             };
@@ -404,9 +526,18 @@ impl<'a> Calc<'a> {
 
     fn nitrate_index(&self, year: Time, factor: FloatValue) -> RSCMResult<Boxes> {
         let switch = self.at(self.p.cloud_albedo.switch_years.nitrate);
-        let norm = self.area_mean(self.nitrate_total(switch, factor)?.1);
+        let norm = memo(&self.k.nitrate_norm, || {
+            Ok(self.area_mean(self.nitrate_total(switch, factor)?.1))
+        })?;
         let value = |y: Time| Ok(self.nitrate_total(y, factor)?.1.map(|v| v / norm));
-        self.extended(year, switch, &value, &child(EMISSIONS_NOX, "Fossil"), None)
+        self.extended(
+            year,
+            switch,
+            NITRATE_SLOT,
+            &value,
+            EMISSIONS_NOX_FOSSIL,
+            None,
+        )
     }
 
     /// Aerosol number index, with nitrate when `nitrate` is given.
@@ -421,8 +552,8 @@ impl<'a> Calc<'a> {
             (&SOX_GROUP, w.sox, s.sox),
             (&SEA_SALT_GROUP, w.sea_salt, s.sea_salt),
         ];
-        for (components, weight, switch) in groups {
-            let sum = self.group(components, switch, year)?;
+        for (g, (components, weight, switch)) in groups.into_iter().enumerate() {
+            let sum = self.group(g, components, switch, year)?;
             out = std::array::from_fn(|i| out[i] + sum[i] * (weight / total));
         }
         Ok(out)
@@ -438,22 +569,26 @@ impl<'a> Calc<'a> {
 
     fn cloud_albedo(&self, year: Time) -> RSCMResult<Boxes> {
         let c = &self.p.cloud_albedo;
-        let reference = self.number_index(self.d.first, None)?;
+        let reference = memo(&self.k.reference, || self.number_index(self.d.first, None))?;
         let factor = self.nitrate_factor(true)?;
-        let at_pattern = self.cdnc(self.at(c.pattern_year), &reference, factor)?;
+        let at_pattern = memo(&self.k.at_pattern, || {
+            self.cdnc(self.at(c.pattern_year), &reference, factor)
+        })?;
         let unscaled = |y: Time| -> RSCMResult<Boxes> {
             let cdnc = self.cdnc(y, &reference, factor)?;
             Ok(std::array::from_fn(|i| {
                 (cdnc[i] / at_pattern[i]) * c.regional_pattern[i]
             }))
         };
-        let scale = match &c.harmonisation {
-            Some(ForcingTarget {
-                target,
-                reference_year,
-            }) => target / self.area_mean(unscaled(self.at(*reference_year))?),
-            None => c.scale,
-        };
+        let scale = memo(&self.k.cloud_scale, || {
+            Ok(match &c.harmonisation {
+                Some(ForcingTarget {
+                    target,
+                    reference_year,
+                }) => target / self.area_mean(unscaled(self.at(*reference_year))?),
+                None => c.scale,
+            })
+        })?;
         Ok(unscaled(year)?.map(|v| v * scale))
     }
 }
@@ -469,14 +604,18 @@ fn prescribed_only(name: &str, source: VariableSource) -> RSCMResult<()> {
 
 #[typetag::serde(name = "magicc.NitrateCloudForcing")]
 impl Component for NitrateCloudForcing {
+    fn create_initial_state(&self) -> Box<dyn ComponentState> {
+        Box::new(NitrateCloudState::default())
+    }
+
     fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions: Vec<_> = emissions_names()
             .iter()
             .map(|name| VariableDefinition::scalar_input(name, emissions_unit(name)))
             .collect();
-        definitions.extend(optical_thickness_species().map(|species| {
-            VariableDefinition::four_box_input(&optical_thickness_name(species), "1")
-        }));
+        definitions.extend(
+            cloud_components().map(|c| VariableDefinition::four_box_input(c.thickness, "1")),
+        );
         for name in NITRATE_SECTORS {
             definitions.push(VariableDefinition::four_box_output(name, "W/m^2"));
         }
@@ -492,10 +631,14 @@ impl Component for NitrateCloudForcing {
         t_current: Time,
         t_next: Time,
         input_state: &InputState,
-        _internal_state: &mut dyn ComponentState,
+        internal_state: &mut dyn ComponentState,
         out: &mut OutputWriter,
     ) -> RSCMResult<()> {
         require_annual("NitrateCloudForcing", t_current, t_next)?;
+        let state = internal_state
+            .as_any()
+            .downcast_ref::<NitrateCloudState>()
+            .ok_or_else(|| RSCMError::Error("Internal state should be NitrateCloudState".into()))?;
         let emissions = |name: &str, t: Time| {
             let window = input_state.get_scalar_window(name);
             prescribed_only(name, window.variable_source())?;
@@ -518,7 +661,7 @@ impl Component for NitrateCloudForcing {
             first: years[0],
             last: years[years.len() - 1],
         };
-        let forcing = self.forcing(&drivers, t_next)?;
+        let forcing = self.forcing_with(&drivers, t_next, &state.constants)?;
         out.set(
             NITRATE_SECTORS[0],
             FourBoxSlice::from_array(forcing.nitrate_fossil),
@@ -621,7 +764,8 @@ mod tests {
         assert_eq!(first.nitrate_fossil, [0.0; 4]);
         let reference = c.forcing(&d, 2008.0).unwrap();
         let total: Boxes = add(reference.nitrate_fossil, reference.nitrate_biosphere);
-        let calc = Calc::new(c.parameters(), &d);
+        let k = Constants::default();
+        let calc = Calc::new(c.parameters(), &d, &k);
         assert!((calc.area_mean(total) - -0.05).abs() < 1e-12);
     }
 
@@ -629,7 +773,8 @@ mod tests {
     fn cloud_albedo_meets_its_target_and_pattern() {
         let c = component(parameters());
         let d = drivers(&rising, &optical_thickness);
-        let calc = Calc::new(c.parameters(), &d);
+        let k = Constants::default();
+        let calc = Calc::new(c.parameters(), &d, &k);
         let at_target = c.forcing(&d, 2008.0).unwrap().cloud_albedo;
         assert!((calc.area_mean(at_target) - -0.8).abs() < 1e-12);
         let at_pattern = c.forcing(&d, 2003.0).unwrap().cloud_albedo;
@@ -675,6 +820,25 @@ mod tests {
         let forcing = component(p).forcing(&d, 2005.0).unwrap();
         assert_eq!(forcing.nitrate_fossil, [0.0; 4]);
         assert_eq!(forcing.nitrate_biosphere, [0.0; 4]);
+    }
+
+    #[test]
+    fn spelt_out_names_match() {
+        for c in cloud_components() {
+            assert_eq!(c.thickness, optical_thickness_name(c.species));
+            if let Some(name) = c.emissions {
+                assert_eq!(name, emissions_name(c.species));
+            }
+        }
+        let names = emissions_names();
+        for (i, sectors) in [NOX_SECTORS, NH3_SECTORS, SOX_SECTORS].iter().enumerate() {
+            assert_eq!(sectors.to_vec(), names[2 * i..2 * i + 2].to_vec());
+        }
+        assert_eq!(EMISSIONS_NOX_FOSSIL, names[0]);
+    }
+
+    fn emissions_name(species: &str) -> String {
+        child("Emissions", species)
     }
 
     #[test]
