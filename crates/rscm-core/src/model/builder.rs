@@ -14,6 +14,7 @@ use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::Graph;
 use pyo3::pyclass;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
@@ -39,15 +40,16 @@ pub struct PrescribedInput {
 }
 
 /// A variable's value at the first step, the same in every region or one per region.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum RegionValues {
     Uniform(FloatValue),
     PerRegion(Vec<FloatValue>),
 }
 
 /// An initial value and, when not given in the stored unit, its unit.
-#[derive(Debug, Clone, PartialEq)]
-struct InitialValue {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct InitialValue {
     values: RegionValues,
     unit: Option<String>,
 }
@@ -89,7 +91,9 @@ impl InitialValue {
 /// The builder generates a graph that defines the inter-component dependencies
 /// and determines what variables are modelled and prescribed to the model.
 /// This graph is used by the model to define the order in which components are solved.
-#[derive(Clone)]
+///
+/// A builder serialises with its components and data, so it is the spec a [`super::Record`] keeps.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelBuilder {
     components: Vec<C>,
     /// Label of each component, aligned with `components`.
@@ -431,6 +435,41 @@ impl ModelBuilder {
         self.labels.push(label.into());
         self.components.push(component);
         self
+    }
+
+    /// A copy whose components are rebuilt from their serialised form, so it shares no mutable state.
+    pub(crate) fn snapshot(&self) -> RSCMResult<ModelBuilder> {
+        let mut copy = self.clone();
+        for (component, label) in copy.components.iter_mut().zip(&self.labels) {
+            let value = serde_json::to_value(&**component).map_err(|e| {
+                RSCMError::Error(format!("Could not serialise component {label}: {e}"))
+            })?;
+            let fresh: Box<dyn Component> = serde_json::from_value(value)
+                .map_err(|e| super::record::read_error(&format!("component {label}"), e))?;
+            *component = Arc::from(fresh);
+        }
+        Ok(copy)
+    }
+
+    /// Replace the component labelled `label` with another of the same type.
+    pub(crate) fn replace_component(&mut self, label: &str, component: C) -> RSCMResult<()> {
+        let index = self.labels.iter().position(|l| l == label).ok_or_else(|| {
+            RSCMError::Error(format!(
+                "No component is labelled '{label}', the labels are {}",
+                self.labels.join(", ")
+            ))
+        })?;
+        let existing = &self.components[index];
+        let type_name = |c: &C| (c.typetag_name(), Model::extract_component_name(c));
+        if type_name(existing) != type_name(&component) {
+            return Err(RSCMError::Error(format!(
+                "Component '{label}' has type {}, so it cannot be replaced by a {}",
+                type_name(existing).1,
+                type_name(&component).1
+            )));
+        }
+        self.components[index] = component;
+        Ok(())
     }
 
     /// Supply prescribed data for a variable, on any grid, replacing any earlier data for it.
@@ -990,6 +1029,7 @@ impl ModelBuilder {
         model.timeseries_types = timeseries_types;
         model.labels = node_labels;
         model.step_plan = step_plan;
+        model.builder = Arc::new(self.clone());
 
         // Initialise component states for each node
         for node_idx in model.components.node_indices() {

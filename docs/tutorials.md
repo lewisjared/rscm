@@ -78,10 +78,10 @@ See the [Python API](api/rscm/index.md) for full class documentation.
 
 **Learn to** save and restore model state for reproducibility.
 
-- Serialise a model with `Model.to_toml()` and restore it with `Model.from_toml()`
-- Continue runs from checkpoint files
-- Find internal component state in the `component_states` section
-- Know the limits: fixed time axis, no Python components, no format version
+- Record a model with `Model.checkpoint()` and restore it with `Model.restore()`
+- Continue runs from JSON checkpoint files
+- Find internal component state in the record's `states`, keyed by label
+- Know the limits: a fixed time axis, and a warning for records from another RSCM version
 
 [**Start Tutorial: State Serialisation**](notebooks/state_serialisation.py)
 

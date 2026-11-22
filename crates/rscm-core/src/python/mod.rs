@@ -130,6 +130,7 @@ pub fn core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<model::PyModelBuilder>()?;
     m.add_class::<crate::model::PrescribedInput>()?;
     m.add_class::<model::PyModel>()?;
+    m.add_class::<model::PyRecord>()?;
     m.add_function(wrap_pyfunction!(model::py_build_models, m)?)?;
     m.add_function(wrap_pyfunction!(model::py_run_models, m)?)?;
     m.add_function(wrap_pyfunction!(model::py_run_builders, m)?)?;

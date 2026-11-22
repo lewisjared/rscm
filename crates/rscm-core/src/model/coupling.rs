@@ -220,10 +220,8 @@ impl Model {
     /// Report the model's coupling: the order the runtime steps components in,
     /// every edge with whether it lags, each variable's source and timeseries type,
     /// and the conversions each component applies.
-    ///
-    /// Fails only for a model without a plan whose coupling maps name a variable it does not store.
     pub fn coupling(&self) -> RSCMResult<Coupling> {
-        Ok(self.resolved_plan()?.report())
+        Ok(self.step_plan.report())
     }
 }
 

@@ -28,6 +28,8 @@ mod parallel;
 #[cfg(test)]
 mod read_side_integration;
 #[cfg(test)]
+mod record;
+#[cfg(test)]
 mod relaxed_grid_validation;
 #[cfg(test)]
 mod runtime_plan;

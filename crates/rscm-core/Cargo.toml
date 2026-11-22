@@ -22,7 +22,8 @@ numpy = "0.27.1"
 nalgebra = "0.34.2"
 petgraph = { version = "0.8.3", features = ["serde-1"] }
 serde = { version = "1.0", features = ["derive", "rc"] }
-serde_json = "1.0"
+# Records must restore every value exactly.
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
 typetag = "0.2"
 log = "0.4"
 num = "0.4"
@@ -31,7 +32,6 @@ thiserror = "2.0"
 strsim = "0.11"
 pythonize = "0.27.0"
 serde_path_to_error = "0.1"
-toml = "0.9"
 rayon.workspace = true
 owo-colors = { version = "4", optional = true }
 rscm-macros.workspace = true
@@ -43,7 +43,7 @@ version = "0.27.2"
 features = ["abi3-py313", "multiple-pymethods"]
 
 [dev-dependencies]
-serde_json = "1.0"
+toml = "0.9"
 
 [package.metadata.docs.rs]
 rustdoc-args = [ "--html-in-header", "katex-header.html" ]

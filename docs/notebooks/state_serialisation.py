@@ -17,9 +17,9 @@
 #
 # It can be useful to capture the current state of a model and serialise it for later use.
 #
-# `Model.to_toml()` produces a human-readable TOML description of a model,
-# including its components, parameters, timeseries and internal state.
-# `Model.from_toml()` recreates the model from that string.
+# `Model.checkpoint()` returns a `Record` of the model at its current step.
+# A record holds the model's builder, the step index, every timeseries and each component's internal state.
+# It serialises as JSON, and `Model.restore()` rebuilds the model from it.
 #
 # ## Related Resources
 #
@@ -28,8 +28,8 @@
 # - [Model Debugging and Inspection](../debugging_inspection/): Using checkpoints to debug
 
 # %%
+import json
 import tempfile
-import tomllib
 from pathlib import Path
 
 import numpy as np
@@ -39,6 +39,7 @@ from rscm.core import (
     InterpolationStrategy,
     Model,
     ModelBuilder,
+    Record,
     TimeAxis,
     Timeseries,
 )
@@ -102,46 +103,44 @@ model.step()
 model.step()
 
 # %% [markdown]
-# ## Serialising to TOML
+# ## Recording the model
 #
-# The TOML is human-readable and can be stored on disk.
-# It contains these sections:
+# A record serialises as JSON with these fields:
 #
+# - `format`: the record's layout version. A record of another format cannot be read.
+# - `rscm`: the RSCM version that wrote it. Restoring a record from another version warns.
+# - `builder`: the `ModelBuilder`, with its components, parameters, prescribed data and initial values.
 # - `time_index`: the current position on the time axis.
-# - `components`: the component graph, with each component's type and parameters.
-# - `collection`: every timeseries, with values solved so far and NaN for later time points.
-# - `time_axis`: the model's time bounds.
-# - `variable_sources`: where each component's inputs come from (prescribed, upstream, lagged or own state).
+# - `values`: every timeseries, with values solved so far and NaN (`null`) for later time points.
 # - `timeseries_types`: whether each variable is a point or an average.
-# - `component_states`: internal state that components carry between steps.
-#
-# Most of the string is timeseries values.
-# Parsing it with `tomllib` picks out the parts above.
+# - `states`: internal state that each component carries between steps, keyed by its label.
 
 # %%
-serialised_model = model.to_toml()
-state = tomllib.loads(serialised_model)
-print(f"{len(serialised_model.splitlines())} lines of TOML")
+record = model.checkpoint()
+saved = json.loads(record.to_json())
 
-co2 = state["collection"]["timeseries"][0]
-print("time_index:", state["time_index"])
-print("components:", [node["type"] for node in state["components"]["nodes"]])
-print("CarbonCycle parameters:", state["components"]["nodes"][1]["parameters"])
-print(f"{co2['name']}:", co2["data"]["scalar"]["values"]["data"][:4], "...")
+print("format:", saved["format"], "rscm:", saved["rscm"])
+print("time_index:", saved["time_index"])
+print("components:", [c["type"] for c in saved["builder"]["components"]])
+print("labels:", saved["builder"]["labels"])
+co2 = record.timeseries().get_timeseries_by_name("Atmospheric Concentrations|CO2")
+print("Atmospheric Concentrations|CO2:", co2.values()[:4], "...")
 
 # %% [markdown]
-# ## Recreating the model state
+# ## Restoring the model
 #
-# A new model can be initialised from the TOML representation.
-# It has the same components and state as the original model,
-# and is on the same step.
+# `Model.restore()` builds the model again from the record's builder,
+# then loads the saved values and component states.
+# It fails if the rebuilt model stores a variable in another unit, grid or timeseries type,
+# which happens when a component's declarations change between versions.
+# The restored model is on the same step as the original.
 
 # %%
-new_model = Model.from_toml(serialised_model)
+new_model = Model.restore(record)
 assert new_model.current_time() == model.current_time()
 
 # %% [markdown]
-# The newly created model can then be run as normal.
+# The restored model can then be run as normal.
 # It produces the same results as the original model run to completion.
 
 # %%
@@ -156,9 +155,18 @@ np.testing.assert_allclose(
 print("Restored and original runs match")
 
 # %% [markdown]
+# `model.output()` returns the same kind of record once a run finishes,
+# so a run's results and its spec are saved together.
+# Pickling and `copy.deepcopy` of a model also go through a record.
+
+# %%
+output = model.output()
+print(f"Output record at step {output.time_index}")
+
+# %% [markdown]
 # ## Checkpoints on disk
 #
-# Write the TOML string to a file to keep a checkpoint between sessions or share it with collaborators.
+# Write the JSON to a file to keep a checkpoint between sessions or share it with collaborators.
 # `builder.build()` can be called again to get a fresh model from the same configuration.
 
 # %%
@@ -167,10 +175,10 @@ while checkpoint_model.current_time() < 1900.0:
     checkpoint_model.step()
 
 with tempfile.TemporaryDirectory() as tmp:
-    checkpoint = Path(tmp) / "model_1900.toml"
-    checkpoint.write_text(checkpoint_model.to_toml())
+    checkpoint = Path(tmp) / "model_1900.json"
+    checkpoint.write_text(checkpoint_model.checkpoint().to_json())
 
-    resumed = Model.from_toml(checkpoint.read_text())
+    resumed = Model.restore(Record.from_json(checkpoint.read_text()))
 
 print(f"Resumed at {resumed.current_time()}")
 resumed.run()
@@ -179,12 +187,13 @@ print(f"Finished at {resumed.current_time()}")
 # %% [markdown]
 # ## Limitations
 #
-# - A restored model keeps its original time axis and prescribed data.
-#   There is no API to change these on a restored model.
-#   To run new scenarios from a branch point,
-#   see the [Scenario Pipeline](../scenario_pipeline/) tutorial.
+# - A restored model keeps its original time axis.
+#   `Model.branch()` changes future prescribed data and component parameters,
+#   as the [Scenario Pipeline](../scenario_pipeline/) tutorial shows.
 # - A Python component is saved through its `to_json()` and `from_json()` methods,
 #   so its class must be importable when the model is restored.
 #   Restoring imports the module the file names, so only load checkpoints you trust.
-# - The TOML records no format version.
-#   Treat checkpoints as tied to the RSCM version that wrote them.
+# - JSON has no NaN, so a component parameter or internal state that is NaN or infinite cannot be recorded.
+#   Timeseries values can be NaN.
+# - A checkpoint from another RSCM version restores with a warning,
+#   and its results may differ from the run that wrote it.

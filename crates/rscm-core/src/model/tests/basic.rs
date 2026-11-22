@@ -4,7 +4,7 @@ use crate::component::{Component, ComponentState, InputState, OutputState, Varia
 use crate::errors::RSCMResult;
 use crate::example_components::{TestComponent, TestComponentParameters};
 use crate::interpolate::strategies::{InterpolationStrategy, PreviousStrategy};
-use crate::model::{Model, ModelBuilder};
+use crate::model::{Model, ModelBuilder, Record, RECORD_FORMAT};
 use crate::spatial::{ScalarGrid, ScalarRegion};
 use crate::timeseries::{FloatValue, Time, TimeAxis, Timeseries};
 use is_close::is_close;
@@ -88,9 +88,7 @@ fn dot() {
 }
 
 #[test]
-fn serialise_and_deserialise_model() {
-    use crate::model::Model;
-
+fn a_record_survives_json() {
     let mut model = ModelBuilder::new()
         .with_time_axis(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)))
         .with_component(Arc::new(TestComponent::from_parameters(
@@ -101,140 +99,29 @@ fn serialise_and_deserialise_model() {
         .with_prescribed_variable("Emissions|CO2", get_emissions())
         .build()
         .unwrap();
-
     model.step();
 
-    let serialised = serde_json::to_string_pretty(&model).unwrap();
-    println!("Pretty JSON");
-    println!("{}", serialised);
-    let serialised = toml::to_string(&model).unwrap();
-    println!("TOML");
-    println!("{}", serialised);
+    let json = model.checkpoint().unwrap().to_json().unwrap();
+    let record = Record::from_json(&json).unwrap();
+    assert_eq!(record.format, RECORD_FORMAT);
+    assert_eq!(record.rscm, env!("CARGO_PKG_VERSION"));
+    assert_eq!(record.time_index, 1);
+    let restored = Model::restore(&record).unwrap();
 
-    let expected = r#"initial_node = 0
-time_index = 1
-variable_sources = [["Emissions|CO2", "TestComponent", "prescribed"]]
-
-[components]
-node_holes = []
-edge_property = "directed"
-edges = [[0, 1, "link"]]
-
-[[components.nodes]]
-type = "NullComponent"
-
-[[components.nodes]]
-type = "TestComponent"
-
-[components.nodes.parameters]
-conversion_factor = 0.5
-
-[[collection.timeseries]]
-name = "Atmospheric Concentrations|CO2"
-
-[collection.timeseries.data.scalar]
-unit = "ppm"
-latest = 1
-interpolation_strategy = "linear"
-
-[collection.timeseries.data.scalar.values]
-v = 1
-dim = [5, 1]
-data = [nan, 5.0, nan, nan, nan]
-
-[collection.timeseries.data.scalar.time_axis.bounds]
-v = 1
-dim = [6]
-data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
-
-[[collection.timeseries]]
-name = "Emissions|CO2"
-
-[collection.timeseries.data.scalar]
-unit = "GtC / yr"
-latest = 4
-interpolation_strategy = "previous"
-
-[collection.timeseries.data.scalar.values]
-v = 1
-dim = [5, 1]
-data = [10.0, 10.0, 10.0, 10.0, 10.0]
-
-[collection.timeseries.data.scalar.time_axis.bounds]
-v = 1
-dim = [6]
-data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
-
-[time_axis.bounds]
-v = 1
-dim = [6]
-data = [2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0]
-
-[timeseries_types]
-"Atmospheric Concentrations|CO2" = "point"
-"Emissions|CO2" = "average"
-
-[labels]
-1 = "TestComponent"
-
-[component_states.0]
-state_type = "unit"
-
-[component_states.1]
-state_type = "unit"
-
-[[step_plan.steps]]
-node = 1
-label = "TestComponent"
-lookup_order = [0]
-
-[[step_plan.steps.reads]]
-slot = 1
-source = "prescribed"
-timeseries_type = "average"
-stored_grid = "scalar"
-plain = false
-
-[step_plan.steps.reads.definition]
-name = "Emissions|CO2"
-unit = "GtC/yr"
-role = "input"
-grid = "scalar"
-
-[[step_plan.steps.writes]]
-slot = 0
-timeseries_type = "point"
-stored_grid = "scalar"
-
-[step_plan.steps.writes.definition]
-name = "Atmospheric Concentrations|CO2"
-unit = "ppm"
-role = "output"
-grid = "scalar"
-"#;
-
-    assert_eq!(serialised, expected);
-
-    let deserialised = toml::from_str::<Model>(&serialised).unwrap();
-
-    assert!(zip(
-        model
-            .timeseries()
-            .get_data("Emissions|CO2")
-            .and_then(|data| data.as_scalar())
-            .unwrap()
-            .values(),
-        deserialised
-            .timeseries()
-            .get_data("Emissions|CO2")
-            .and_then(|data| data.as_scalar())
-            .unwrap()
-            .values()
-    )
-    .all(|(x0, x1)| { is_close!(*x0, *x1) || (x0.is_nan() && x0.is_nan()) }));
-
-    assert_eq!(model.current_time_bounds(), (2021.0, 2022.0));
-    assert_eq!(deserialised.current_time_bounds(), (2021.0, 2022.0));
+    for name in ["Emissions|CO2", "Atmospheric Concentrations|CO2"] {
+        let values = |m: &Model| {
+            m.timeseries()
+                .get_data(name)
+                .and_then(|data| data.as_scalar())
+                .unwrap()
+                .values()
+                .clone()
+        };
+        assert!(zip(values(&model), values(&restored))
+            .all(|(x0, x1)| is_close!(x0, x1) || (x0.is_nan() && x1.is_nan())));
+    }
+    assert_eq!(restored.current_time_bounds(), (2021.0, 2022.0));
+    assert_eq!(restored.plan(), model.plan());
 }
 
 // Module-level types for checkpoint test to enable proper serialisation/deserialisation
@@ -333,8 +220,8 @@ fn test_checkpoint_preserves_component_state() {
     assert_eq!(typed_state.n_calls, 3, "Should have been called 3 times");
 
     // Checkpoint and restore
-    let checkpoint = model.checkpoint().unwrap();
-    let restored = Model::from_checkpoint(&checkpoint).unwrap();
+    let record = Record::from_json(&model.checkpoint().unwrap().to_json().unwrap()).unwrap();
+    let restored = Model::restore(&record).unwrap();
 
     // Verify state was preserved
     let restored_state = restored.get_component_state(node_idx).unwrap();

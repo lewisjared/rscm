@@ -1,6 +1,6 @@
 //! Model struct and runtime execution.
 
-use crate::component::{ComponentState, GridType, TimeseriesType, VariableDefinition};
+use crate::component::{ComponentState, GridType, TimeseriesType};
 use crate::errors::{RSCMError, RSCMResult};
 use crate::state::{
     FourBoxSlice, HemisphericSlice, InputPlan, InputState, OutputBuffer, StateValue, VariableSource,
@@ -10,43 +10,13 @@ use crate::timeseries_collection::TimeseriesCollection;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::{EdgeFiltered, EdgeRef};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
-use super::plan::{resolve, Decisions, Step, StepPlan, Write};
+use super::builder::ModelBuilder;
+use super::plan::{Step, StepPlan, Write};
 use super::transformations::aggregate_state_value;
-use super::types::{CGraph, RequiredTransformation, TransformDirection, UnitConversionInfo};
-
-/// Custom serialisation for HashMap<(String, String), T> to work with JSON.
-/// Serialises as a Vec of (key1, key2, value) tuples.
-mod tuple_map_serde {
-    use super::*;
-
-    pub fn serialize<S, T>(
-        map: &HashMap<(String, String), T>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-        T: Serialize,
-    {
-        let vec: Vec<(&str, &str, &T)> = map
-            .iter()
-            .map(|((k1, k2), v)| (k1.as_str(), k2.as_str(), v))
-            .collect();
-        vec.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<HashMap<(String, String), T>, D::Error>
-    where
-        D: Deserializer<'de>,
-        T: Deserialize<'de>,
-    {
-        let vec: Vec<(String, String, T)> = Vec::deserialize(deserializer)?;
-        Ok(vec.into_iter().map(|(k1, k2, v)| ((k1, k2), v)).collect())
-    }
-}
+use super::types::{CGraph, RequiredTransformation};
 
 /// A coupled set of components that are solved on a common time axis.
 ///
@@ -62,7 +32,7 @@ mod tuple_map_serde {
 /// then a CO_2 concentration timeseries must be prescribed.
 /// If the model also contains a carbon cycle component which produced CO_2 concentrations,
 /// then the ERF component will be solved after the carbon cycle model.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct Model {
     /// A directed graph with components as nodes and the edges defining the state dependencies
     /// between nodes.
@@ -70,68 +40,53 @@ pub struct Model {
     /// solved before another component needs the state.
     pub(crate) components: CGraph,
     /// The base node of the graph from where to begin traversing.
+    #[allow(dead_code)]
     pub(crate) initial_node: NodeIndex,
     /// The model state.
     ///
     /// Variable names within the model are unique and these variable names are used by
     /// components to request state.
-    collection: TimeseriesCollection,
+    pub(crate) collection: TimeseriesCollection,
     time_axis: Arc<TimeAxis>,
-    time_index: usize,
+    pub(crate) time_index: usize,
     /// Custom weights for grid aggregation, keyed by grid.
     ///
     /// Used for grid transformations during model execution.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     grid_weights: HashMap<GridType, Vec<f64>>,
     /// Read-side transformations: variable name -> transformation needed when component reads.
     ///
     /// When a component reads a variable at a coarser grid than the schema declares,
     /// this maps the variable name to the transformation needed (e.g., FourBox -> Scalar).
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     read_transforms: HashMap<String, RequiredTransformation>,
     /// Write-side transformations: variable name -> transformation needed when component writes.
     ///
     /// When a component writes a variable at a finer grid than the schema declares,
     /// this maps the variable name to the transformation needed (e.g., FourBox -> Scalar).
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     write_transforms: HashMap<String, RequiredTransformation>,
     /// Unit conversions needed at runtime.
     ///
     /// Key: (variable_name, component_name) -> conversion factor
     /// The factor converts from the stored unit to the component's unit when reading,
     /// and its inverse converts a producer's output into the stored unit when writing.
-    #[serde(
-        default,
-        skip_serializing_if = "HashMap::is_empty",
-        with = "tuple_map_serde"
-    )]
     unit_conversions: HashMap<(String, String), f64>,
     /// Variable source types for get() behaviour.
     /// Key: (variable_name, component_name) -> source type.
     /// This matches the unit_conversions pattern since the same variable
     /// can have different sources for different components.
-    #[serde(
-        default,
-        skip_serializing_if = "HashMap::is_empty",
-        with = "tuple_map_serde"
-    )]
     variable_sources: HashMap<(String, String), VariableSource>,
     /// Whether each variable is a point or an average.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) timeseries_types: BTreeMap<String, TimeseriesType>,
     /// Label of each component node, set by the builder.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) labels: BTreeMap<NodeIndex, String>,
     /// Internal state for each component, keyed by node index.
     /// Uses Box<dyn ComponentState> with typetag for serialisation.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) component_states: BTreeMap<NodeIndex, Box<dyn ComponentState>>,
     /// Every coupling decision, resolved by the builder.
-    #[serde(default)]
     pub(crate) step_plan: StepPlan,
     /// Scratch for stepping each component of the plan, made from it on the first step.
-    #[serde(skip)]
     buffers: Option<Vec<StepBuffers>>,
+    /// The builder this model was built from, which a [`super::Record`] keeps as its spec.
+    pub(crate) builder: Arc<ModelBuilder>,
 }
 
 /// Buffers for stepping one component, aligned with its [`Step`].
@@ -186,21 +141,6 @@ fn scale_state_value(value: &StateValue, factor: FloatValue) -> StateValue {
 pub(crate) fn execution_order(graph: &CGraph) -> Result<Vec<NodeIndex>, NodeIndex> {
     let graph = EdgeFiltered::from_fn(graph, |edge| edge.source() != edge.target());
     petgraph::algo::toposort(&graph, None).map_err(|cycle| cycle.node_id())
-}
-
-fn transform(
-    def: &VariableDefinition,
-    source_grid: GridType,
-    target_grid: GridType,
-    direction: TransformDirection,
-) -> RequiredTransformation {
-    RequiredTransformation {
-        variable: def.name.clone(),
-        unit: def.unit.clone(),
-        source_grid,
-        target_grid,
-        direction,
-    }
 }
 
 impl Model {
@@ -340,6 +280,7 @@ impl Model {
             component_states: BTreeMap::new(),
             step_plan: StepPlan::default(),
             buffers: None,
+            builder: Arc::new(ModelBuilder::new()),
         }
     }
 
@@ -348,26 +289,9 @@ impl Model {
         self.component_states.get(&node_index).map(|b| b.as_ref())
     }
 
-    /// Create a checkpoint of the model state that can be serialised.
-    ///
-    /// The checkpoint includes:
-    /// - All timeseries data (including current state)
-    /// - Component internal states (flux_history, etc.)
-    /// - Current time index
-    ///
-    /// Use this to save model state mid-run for later resumption.
-    pub fn checkpoint(&self) -> RSCMResult<String> {
-        serde_json::to_string(self)
-            .map_err(|e| RSCMError::Error(format!("Serialisation failed: {}", e)))
-    }
-
-    /// Restore a model from a JSON checkpoint string.
-    ///
-    /// This recreates the exact state of the model at checkpoint time,
-    /// including component internal states.
-    pub fn from_checkpoint(json: &str) -> RSCMResult<Self> {
-        serde_json::from_str(json)
-            .map_err(|e| RSCMError::Error(format!("Deserialisation failed: {}", e)))
+    /// The number of steps on the time axis.
+    pub(crate) fn timeseries_len(&self) -> usize {
+        self.time_axis.len()
     }
 
     /// Get the current time index (useful for checkpointing).
@@ -475,13 +399,6 @@ impl Model {
     /// Gets the time bounds at the current step.
     pub fn current_time_bounds(&self) -> (Time, Time) {
         self.time_axis.at_bounds(self.time_index).unwrap()
-    }
-
-    /// Grid of the stored series `name`, or `Scalar` if there is none.
-    fn stored_grid(&self, name: &str) -> GridType {
-        self.collection
-            .get_by_name(name)
-            .map_or(GridType::Scalar, |item| item.data.grid())
     }
 
     /// Solve a single component for the current step.
@@ -616,78 +533,17 @@ impl Model {
 
     /// Every coupling decision the builder made, in execution order.
     ///
-    /// Empty for a model made without the builder or restored from a save that has no plan.
+    /// Empty for a model made without the builder.
     pub fn plan(&self) -> &StepPlan {
         &self.step_plan
     }
 
-    /// The plan the builder resolved, or for a model without one, the plan its coupling maps give.
-    pub(crate) fn resolved_plan(&self) -> RSCMResult<std::borrow::Cow<'_, StepPlan>> {
-        if !self.step_plan.steps.is_empty() {
-            return Ok(std::borrow::Cow::Borrowed(&self.step_plan));
-        }
-        let labels: BTreeMap<NodeIndex, String> = self
-            .components
-            .node_indices()
-            .map(|node| (node, self.component_label(node)))
-            .collect();
-        let mut producers = HashMap::new();
-        let mut read_conversions = Vec::new();
-        let mut transformations = Vec::new();
-        for (&node, label) in &labels {
-            let component = &self.components[node];
-            for def in component.outputs() {
-                producers.insert(def.name.clone(), label.clone());
-                let stored_grid = self.stored_grid(&def.name);
-                if self.write_transforms.contains_key(&def.name) && def.grid != stored_grid {
-                    transformations.push((
-                        label.clone(),
-                        transform(&def, def.grid, stored_grid, TransformDirection::Write),
-                    ));
-                }
-            }
-            for def in component.inputs() {
-                let key = (def.name.clone(), label.clone());
-                if let (Some(&factor), Some(stored)) = (
-                    self.unit_conversions.get(&key),
-                    self.collection.get_data(&def.name),
-                ) {
-                    read_conversions.push(UnitConversionInfo {
-                        variable: def.name.clone(),
-                        component: label.clone(),
-                        factor,
-                        source_unit: stored.unit().to_string(),
-                        target_unit: def.unit.clone(),
-                    });
-                }
-                let stored_grid = self.stored_grid(&def.name);
-                if self.read_transforms.contains_key(&def.name) && def.grid != stored_grid {
-                    transformations.push((
-                        label.clone(),
-                        transform(&def, stored_grid, def.grid, TransformDirection::Read),
-                    ));
-                }
-            }
-        }
-        resolve(&Decisions {
-            graph: &self.components,
-            initial_node: self.initial_node,
-            labels: &labels,
-            collection: &self.collection,
-            sources: &self.variable_sources,
-            producers: &producers,
-            read_conversions: &read_conversions,
-            transformations: &transformations,
-            timeseries_types: &self.timeseries_types,
-            grid_weights: &self.grid_weights,
-        })
-        .map(std::borrow::Cow::Owned)
-    }
-
     /// Step the model forward a step by solving each component for the current step.
     fn step_model(&mut self) -> RSCMResult<()> {
-        if self.step_plan.steps.is_empty() {
-            self.step_plan = self.resolved_plan()?.into_owned();
+        if self.step_plan.steps.is_empty() && self.components.node_count() > 1 {
+            return Err(RSCMError::Error(
+                "The model has components but no step plan, so build it with ModelBuilder".into(),
+            ));
         }
         let plan = std::mem::take(&mut self.step_plan);
         let mut buffers = self

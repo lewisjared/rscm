@@ -16,6 +16,7 @@ mod coupling;
 mod null_component;
 mod parallel;
 mod plan;
+mod record;
 mod runtime;
 mod state_extraction;
 mod storage;
@@ -34,6 +35,7 @@ pub use parallel::{build_and_run, build_models, run_each, run_models, Pool};
 pub use plan::{
     resolve_standalone, Conversion, GridConversion, Read, Step, StepPlan, UnitConversion, Write,
 };
+pub use record::{Branch, Record, RECORD_FORMAT};
 pub use runtime::Model;
 pub use state_extraction::extract_state;
 pub use types::{GraphEdge, RequiredTransformation, TransformDirection, UnitConversionInfo};
