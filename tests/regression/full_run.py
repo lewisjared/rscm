@@ -280,12 +280,15 @@ PRESCRIBED = (*full.PRESCRIBED_AGENTS, *full.BIOMASS_AGENTS)
 def prescribed_forcing() -> dict[str, NDArray[np.float64]]:
     """Four-box ERF of every agent MAGICC7 calculates before the run."""
     run = load()
-    return full.prescribed_forcing(
+    out = full.prescribed_forcing(
         run.years,
         magicc7_emissions(run),
         run.parameters,
         full.load_inputs(run.parameters),
     )
+    # ForcingAggregation scales solar forcing.
+    out["Solar"] = out["Solar"] * run.parameters["rf_solar_scale"]
+    return out
 
 
 def climate_parameters(run: FullRun) -> dict[str, Any]:
@@ -327,7 +330,7 @@ def prescribed_global_forcing(run: FullRun) -> dict[str, NDArray[np.float64]]:
     }
     indirect = "Aerosols|Indirect Effect"
     out[indirect] = pr.area_mean(boxes[indirect])
-    out["Solar"] = boxes["Solar"][:, 0]
+    out["Solar"] = boxes["Solar"][:, 0] * p["rf_solar_scale"]
 
     def change(raw: NDArray[np.float64]) -> Callable[[float], float]:
         def at(year: float) -> float:

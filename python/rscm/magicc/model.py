@@ -8,6 +8,7 @@ A configuration is a plain dict:
 - ``initial_values``: the value at the first time bound of each state variable,
   apart from those of ClimateUDEB and ForcingAggregation, which `setup` calculates
   from the forcing at the first time bound.
+  CH4Oxidation's burdens default to all CH4 natural at the initial CH4 concentration.
 - ``initial_forcing`` (optional): the forcing of ForcingAggregation agents
   at the first time bound, keyed by agent variable,
   with four values for a regional agent and one otherwise.
@@ -59,6 +60,7 @@ from rscm.core import (
 )
 from rscm.magicc import prescribed as pr
 from rscm.names import (
+    ATMOSPHERIC_CONCENTRATIONS_CH4,
     ATMOSPHERIC_CONCENTRATIONS_CO2,
     EFFICACY_ADJUSTED_ERF,
     EQUILIBRIUM_CLIMATE_SENSITIVITY,
@@ -394,10 +396,15 @@ def setup(  # noqa: PLR0913
             if d.role == VariableRole.Output
         }
     schema, grid_weights = _grid_setup(list(components.values()), prescribed)
+    burdens = {}
+    ch4 = config["initial_values"].get(ATMOSPHERIC_CONCENTRATIONS_CH4)
+    if "CH4Oxidation" in specs and ch4 is not None:
+        burdens = specs["CH4Oxidation"].configure().initial_values(ch4)
     spec = ModelSpec(
         components=specs,
         lags=LAGS,
         initial_values={
+            **burdens,
             **config["initial_values"],
             **sea_level,
             **specs["ClimateUDEB"].configure().initial_values(total),

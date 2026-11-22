@@ -384,24 +384,42 @@ def test_ch4_lifetimes_reach_every_component():
         parameters={"ch4_tausoil": 60.0, "ch4_tautempsensitivity": 0.1}
     )
     c = config["components"]
-    non_oh = 1.0 / (1.0 / 60.0 + 1.0 / 120.0 + 1.0 / 200.0)
 
     assert c["CH4Chemistry"]["soil_lifetime"] == 60.0
     assert c["CH4Chemistry"]["temperature_sensitivity"] == 0.1
-    assert c["CH4Oxidation"]["non_oh_lifetime"] == pytest.approx(non_oh)
-    assert c["HalocarbonChemistry"]["initial_ch4_oh_lifetime"] == pytest.approx(
-        1.0 / (1.0 / 9.9474 - 1.0 / non_oh)
+    assert c["CH4Oxidation"]["soil_lifetime"] == 60.0
+    assert c["CH4Oxidation"]["stratospheric_lifetime"] == 120.0
+    assert c["HalocarbonChemistry"]["ch4_soil_lifetime"] == 60.0
+    assert c["HalocarbonChemistry"]["initial_ch4_lifetime"] == 9.9474
+
+
+def test_feedback_start_years_outside_the_run_match_its_ends():
+    years = np.arange(1750.0, 1781.0)
+    starts = (
+        "ch4_feed_yrstart",
+        "co2_fertilization_yrstart",
+        "co2_tempfeedback_yrstart",
+        "n2o_feed_yrstart",
     )
 
+    def run(start):
+        config, inputs = translate(years=years, parameters=dict.fromkeys(starts, start))
+        model = emissions_driven.setup_model(
+            config, inputs, TimeAxis.from_values(years)
+        ).run()
+        return {
+            name: model.timeseries().get_timeseries_by_name(name).values()
+            for name in (
+                "Atmospheric Concentrations|CO2",
+                "Atmospheric Concentrations|CH4",
+                "Atmospheric Concentrations|N2O",
+            )
+        }
 
-def test_feedback_start_years_are_moved_into_the_run():
-    config, _ = translate(
-        parameters={"ch4_feed_yrstart": 1700.0, "n2o_feed_yrstart": 3000.0}
-    )
-    c = config["components"]
-
-    assert c["CH4Chemistry"]["feedback_start_year"] == YEARS[0]
-    assert c["N2OChemistry"]["feedback_start_year"] == YEARS[-1]
+    for outside, end in ((1700.0, years[0]), (3000.0, years[-1])):
+        expected = run(end)
+        for name, values in run(outside).items():
+            np.testing.assert_array_equal(values, expected[name], err_msg=name)
 
 
 def test_thermal_expansion_follows_scaling_and_file():
@@ -691,3 +709,82 @@ def test_non_positive_concentration_stops_the_run():
 
     with pytest.raises(RuntimeError, match=r"CO2 concentration is -?\d.* ppm in \d{4}"):
         model.run()
+
+
+SHORT = np.arange(1750.0, 1771.0)
+
+
+def _run_short(edit) -> dict[str, np.ndarray]:
+    early = {
+        "co2_switchfromconc2emis_year": 1755,
+        "co2_tempfeedback_yrstart": 1750,
+    }
+    config, inputs = translate(years=SHORT, parameters=early)
+    edit(config["components"])
+    model = emissions_driven.setup_model(
+        config, inputs, TimeAxis.from_values(SHORT)
+    ).run()
+    ts = model.timeseries()
+    return {
+        **{
+            name: ts.get_timeseries_by_name(name).values()
+            for name in (
+                "Effective Radiative Forcing",
+                "Atmospheric Concentrations|CO2",
+                "Atmospheric Burden|CH4|Natural",
+            )
+        },
+        "Surface Air Temperature Change": ts.get_four_box_timeseries_by_name(
+            "Surface Air Temperature Change"
+        ).values(),
+    }
+
+
+def test_solar_scale_follows_the_forcing_agent():
+    def erf(scale):
+        def edit(c):
+            agents = c["ForcingAggregation"]["agents"]
+            (solar,) = [
+                a
+                for a in agents
+                if a["variable"] == "Effective Radiative Forcing|Solar"
+            ]
+            solar["scale"] = scale
+
+        return _run_short(edit)["Effective Radiative Forcing"]
+
+    assert not np.array_equal(erf(0.66), erf(0.0))
+
+
+def test_initial_ch4_burden_follows_tg_per_ppb():
+    def ch4(tg_per_ppb):
+        def edit(c):
+            c["CH4Oxidation"]["tg_per_ppb"] = tg_per_ppb
+
+        return _run_short(edit)["Atmospheric Burden|CH4|Natural"][0]
+
+    assert ch4(5.5) == 2 * ch4(2.75)
+
+
+def test_carbon_temperature_feedback_can_be_excluded():
+    def co2(include):
+        def edit(c):
+            c["TerrestrialCarbon"]["include_temperature_feedback"] = include
+
+        return _run_short(edit)["Atmospheric Concentrations|CO2"]
+
+    assert not np.array_equal(co2(True), co2(False))
+
+
+def test_unset_sh_upwelling_threshold_follows_nh():
+    def temperature(sh):
+        def edit(c):
+            c["ClimateUDEB"]["upwelling_threshold_temperature_nh"] = 1.0
+            c["ClimateUDEB"].pop("upwelling_threshold_temperature_sh", None)
+            if sh is not None:
+                c["ClimateUDEB"]["upwelling_threshold_temperature_sh"] = sh
+
+        return _run_short(edit)["Surface Air Temperature Change"]
+
+    np.testing.assert_array_equal(temperature(None), temperature(1.0))
+    assert not np.array_equal(temperature(None), temperature(8.0))

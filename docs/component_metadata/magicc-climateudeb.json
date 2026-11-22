@@ -107,8 +107,8 @@
     },
     {
       "name": "upwelling_threshold_temperature_sh",
-      "type": "FloatValue",
-      "description": "Temperature change at which SH upwelling reaches its minimum (MAGICC7 `CORE_UPWELL_THRESH_TEMP_SH`)\n\nunit: K\n\nDefault: 8.0\nMAGICC7: CORE_UPWELL_THRESH_TEMP_SH"
+      "type": "Option<FloatValue>",
+      "description": "Temperature change at which SH upwelling reaches its minimum (MAGICC7 `CORE_UPWELL_THRESH_TEMP_SH`)\n\nunit: K\n\nUnset, it is the NH threshold, as with MAGICC7's default `CORE_UPWELL_THRESH_ONEGLOBAL`.\nMAGICC7: CORE_UPWELL_THRESH_TEMP_SH"
     },
     {
       "name": "ecs",

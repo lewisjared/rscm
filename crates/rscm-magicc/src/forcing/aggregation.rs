@@ -171,7 +171,7 @@ impl ForcingAggregation {
     fn agent_forcing(&self, agent: &ForcingAgent, value: &[FloatValue]) -> Forcing {
         let area = *self.parameters.grid().weights();
         if agent.regional {
-            let boxes: [FloatValue; 4] = std::array::from_fn(|i| value[i]);
+            let boxes: [FloatValue; 4] = std::array::from_fn(|i| value[i] * agent.scale);
             let global = (0..4).fold(0.0, |sum, i| sum + boxes[i] * area[i]);
             (global, boxes)
         } else {
@@ -180,7 +180,8 @@ impl ForcingAggregation {
             } else {
                 compute_qfrac(&agent.regional_pattern, &area)
             };
-            (value[0], qfrac.map(|q| value[0] * q))
+            let global = value[0] * agent.scale;
+            (global, qfrac.map(|q| global * q))
         }
     }
 
@@ -402,6 +403,7 @@ mod tests {
             regional_pattern: [1.0, 2.0, 1.0, 2.0],
             hemispheric: false,
             use_co2_internal_efficacy: false,
+            scale: 1.0,
             efficacy,
             internal_efficacy: internal,
         }
@@ -425,6 +427,28 @@ mod tests {
         assert!((total - 2.0).abs() < 1e-12);
         assert!((mean - 2.0).abs() < 1e-12);
         assert!((boxes[1] / boxes[0] - 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn scale_multiplies_the_input_before_the_efficacy() {
+        let scaled = |regional, scale, value: Vec<FloatValue>| {
+            let mut a = agent(regional, 1.5, 1.2);
+            a.scale = scale;
+            component(vec![a], EfficacyMethod::AR6).aggregate(&[value])
+        };
+        let boxes = vec![1.0, 2.0, 3.0, 4.0];
+        assert_eq!(
+            scaled(true, 0.66, boxes.clone()),
+            scaled(true, 1.0, boxes.iter().map(|v| v * 0.66).collect())
+        );
+        assert_eq!(
+            scaled(false, 0.66, vec![2.0]),
+            scaled(false, 1.0, vec![2.0 * 0.66])
+        );
+        assert_ne!(
+            scaled(false, 0.66, vec![2.0]),
+            scaled(false, 1.0, vec![2.0])
+        );
     }
 
     #[test]

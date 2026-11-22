@@ -4,6 +4,7 @@
 //! Species defaults are MAGICC7 v7.5.3's `FGAS_*` and `MHALO_*` configuration.
 
 use crate::climate::lamcalc::compute_qfrac;
+use crate::parameters::{ch4_non_oh_lifetime, ch4_oh_lifetime, CH4ChemistryParameters};
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
@@ -131,12 +132,26 @@ pub struct HalocarbonChemistryParameters {
     /// Scale OH lifetimes with the CH4 OH lifetime (MAGICC7 `*_USE_TAUOH_VAR`)
     pub include_variable_oh_lifetime: bool,
 
-    /// Unperturbed CH4 OH lifetime, the reference for the OH scaling.
+    /// Initial total CH4 lifetime, behind the unperturbed CH4 OH lifetime that the OH scaling
+    /// is relative to (MAGICC7 `CH4_TAUTOT_INIT`)
     ///
     /// unit: yr
+    pub initial_ch4_lifetime: FloatValue,
+
+    /// CH4 soil sink lifetime (MAGICC7 `CH4_TAUSOIL`)
     ///
-    /// MAGICC7 derives it from `CH4_TAUTOT_INIT` and the other CH4 lifetimes.
-    pub initial_ch4_oh_lifetime: FloatValue,
+    /// unit: yr
+    pub ch4_soil_lifetime: FloatValue,
+
+    /// CH4 stratospheric sink lifetime (MAGICC7 `CH4_TAUSTRAT`)
+    ///
+    /// unit: yr
+    pub ch4_stratospheric_lifetime: FloatValue,
+
+    /// CH4 tropospheric Cl sink lifetime (MAGICC7 `CH4_TAUTROPCL`)
+    ///
+    /// unit: yr
+    pub ch4_tropospheric_cl_lifetime: FloatValue,
 
     /// Scale stratospheric lifetimes with warming (MAGICC7 `*_USE_TAUSTRAT_VAR`)
     pub include_variable_stratospheric_lifetime: bool,
@@ -276,6 +291,18 @@ impl FGasRegions {
 }
 
 impl HalocarbonChemistryParameters {
+    /// Unperturbed CH4 OH lifetime, the reference for the OH scaling, see [`ch4_oh_lifetime`]
+    pub fn initial_ch4_oh_lifetime(&self) -> FloatValue {
+        ch4_oh_lifetime(
+            self.initial_ch4_lifetime,
+            ch4_non_oh_lifetime(
+                self.ch4_soil_lifetime,
+                self.ch4_stratospheric_lifetime,
+                self.ch4_tropospheric_cl_lifetime,
+            ),
+        )
+    }
+
     /// Concentration change (ppt) per kt of emissions.
     pub fn emission_to_concentration_factor(&self, species: &HalocarbonSpecies) -> FloatValue {
         self.air_molar_mass
@@ -295,6 +322,7 @@ impl HalocarbonChemistryParameters {
 
 impl Default for HalocarbonChemistryParameters {
     fn default() -> Self {
+        let ch4 = CH4ChemistryParameters::default();
         Self {
             fgases: default_fgases(),
             montreal_gases: default_montreal_gases(),
@@ -304,8 +332,10 @@ impl Default for HalocarbonChemistryParameters {
             air_molar_mass: 28.984,
             atmosphere_mass: 5.133,
             include_variable_oh_lifetime: true,
-            // 1 / (1/CH4_TAUTOT_INIT - 1/CH4_TAUSOIL - 1/CH4_TAUSTRAT - 1/CH4_TAUTROPCL)
-            initial_ch4_oh_lifetime: 1.0 / (1.0 / 9.9474 - 1.0 / 150.0 - 1.0 / 120.0 - 1.0 / 200.0),
+            initial_ch4_lifetime: ch4.initial_ch4_lifetime,
+            ch4_soil_lifetime: ch4.soil_lifetime,
+            ch4_stratospheric_lifetime: ch4.stratospheric_lifetime,
+            ch4_tropospheric_cl_lifetime: ch4.tropospheric_cl_lifetime,
             include_variable_stratospheric_lifetime: true,
             meridional_flux_reference_year: 1980.0,
             meridional_flux_change_per_degree: 0.15,

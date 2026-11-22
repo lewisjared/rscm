@@ -8,43 +8,73 @@ from rscm.magicc import ClimateUDEBBuilder
 from rscm.magicc import prescribed as pr
 
 
+def _volcanic_efficacy(northern, southern, *, first, last, **kwargs):
+    times = 2000.0 + np.arange(1, len(northern) + 1) / 12
+    forcing = pr.volcanic_substeps(
+        times, northern, southern, regional_pattern_years=(first, last), **kwargs
+    )
+    return ClimateUDEBBuilder.from_parameters(
+        {"subannual_forcing": forcing}
+    ).subannual_efficacy()
+
+
 def test_volcanic_pattern_hand_example():
-    times = [1999.5, 2000.0, 2000.5, 2001.0, 2001.5, 2002.0]
-    northern = [99.0, 1.0, 3.0, np.nan, 5.0, 99.0]
-    southern = [99.0, 1.0, 1.0, 7.0, 3.0, 99.0]
+    # The window is the 12 months ending from 2001.0 to before 2002.0
+    northern = [99.0] * 11 + [1.0] * 6 + [5.0] * 6 + [99.0]
+    southern = [99.0] * 11 + [3.0] * 12 + [99.0]
 
-    pattern = pr.volcanic_pattern(
-        times, northern, southern, start_year=2000, last_year=2001, scale=0.75
+    pattern, _ = _volcanic_efficacy(
+        northern, southern, first=2001, last=2001, scale=0.5
     )
 
-    # Months 2000.0, 2000.5 and 2001.5 count.
-    # North 3 * 0.75, south 5/3 * 0.75, global mean 1.75
-    npt.assert_allclose(pattern, [-0.5, -0.5, -1.5, -1.5], rtol=0, atol=1e-12)
-
-
-def test_volcanic_pattern_symmetric_forcing():
-    times = np.arange(2000.0, 2002.0, 1 / 12)
-    forcing = np.linspace(-1.0, -3.0, len(times))
-
-    pattern = pr.volcanic_pattern(
-        times, forcing, forcing, start_year=2000, last_year=2001
-    )
-
+    # North 1.5, south 1.5, so the global mean is 1.5 and each box is -1
     npt.assert_allclose(pattern, [-1.0] * 4, rtol=0, atol=1e-12)
 
 
-def test_volcanic_pattern_sums_global_mean_by_box():
-    pattern = pr.volcanic_pattern(
-        [2000.0], [0.3], [0.2], start_year=2000, last_year=2000, scale=1.0
+def test_volcanic_pattern_follows_scale():
+    northern = np.linspace(-1.0, -3.0, 24)
+    southern = northern / 2
+
+    unscaled, _ = _volcanic_efficacy(
+        northern, southern, first=2000, last=2001, scale=1.0
+    )
+    scaled, _ = _volcanic_efficacy(northern, southern, first=2000, last=2001, scale=0.5)
+
+    npt.assert_allclose(
+        np.array(scaled) + 1, (np.array(unscaled) + 1) * 0.5, atol=1e-12
     )
 
+
+def test_volcanic_pattern_sums_global_mean_by_box():
+    pattern, _ = _volcanic_efficacy([0.3], [0.2], first=2000, last=2000, scale=1.0)
+
     # MAGICC7 sums box times area, which rounds above the hemispheric mean of 0.25.
-    assert pattern == (
+    assert tuple(pattern) == (
         0.3 - 0.25000000000000006 - 1,
         0.3 - 0.25000000000000006 - 1,
         0.2 - 0.25000000000000006 - 1,
         0.2 - 0.25000000000000006 - 1,
     )
+
+
+def test_volcanic_internal_efficacy_follows_the_climate():
+    forcing = pr.volcanic_substeps(
+        2000.0 + np.arange(1, 25) / 12,
+        np.full(24, -2.0),
+        np.full(24, -1.0),
+        regional_pattern_years=(2000, 2001),
+    )
+
+    def efficacy(ecs):
+        builder = ClimateUDEBBuilder.from_parameters(
+            {"ecs": ecs, "subannual_forcing": forcing}
+        )
+        pattern, internal = builder.subannual_efficacy()
+        at_3_71 = ClimateUDEBBuilder.from_parameters({"ecs": ecs, "erf_2xco2": 3.71})
+        assert internal == at_3_71.internal_efficacy(pattern)
+        return internal
+
+    assert efficacy(2.0) != efficacy(4.5)
 
 
 def test_harmonise_returns_a_given_factor():

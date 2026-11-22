@@ -27,15 +27,11 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
-from rscm._lib.magicc import ClimateUDEBBuilder, HalocarbonChemistryBuilder
+from rscm._lib.magicc import HalocarbonChemistryBuilder
 from rscm.core import TimeAxis
 from rscm.magicc import checks, emissions_driven, model
 from rscm.magicc import prescribed as pr
 from rscm.names import (
-    ATMOSPHERIC_BURDEN_CH4_BIOSPHERE,
-    ATMOSPHERIC_BURDEN_CH4_FOSSIL,
-    ATMOSPHERIC_BURDEN_CH4_NATURAL,
-    ATMOSPHERIC_BURDEN_CH4_PERMAFROST,
     ATMOSPHERIC_CONCENTRATIONS,
     CARBON_POOL_DETRITUS,
     CARBON_POOL_PLANT,
@@ -174,6 +170,9 @@ PRESCRIBED_AGENTS = {
 Agents calculated before the run, and the MAGICC7 efficacy key of each.
 MAGICC7's total uses the direct aerosol efficacy for biomass aerosols and dust.
 """
+
+AGENT_SCALES = {"Solar": "rf_solar_scale"}
+"""Prescribed agents that ForcingAggregation scales, and the MAGICC7 scale of each."""
 
 NORMYEAR_PATTERNS = {
     "bcsnow": "Black Carbon on Snow",
@@ -385,7 +384,16 @@ N2O_PARAMETERS = {
 }
 """N2OChemistry parameters and their MAGICC7 names."""
 
+CH4_LIFETIMES = {
+    "soil_lifetime": "ch4_tausoil",
+    "stratospheric_lifetime": "ch4_taustrat",
+    "tropospheric_cl_lifetime": "ch4_tautropcl",
+}
+"""CH4 sink lifetimes other than OH, and their MAGICC7 names."""
+
 HALOCARBON_PARAMETERS = {
+    "initial_ch4_lifetime": "ch4_tautot_init",
+    **{f"ch4_{ours}": theirs for ours, theirs in CH4_LIFETIMES.items()},
     "br_cl_ratio": "stratoz_br_vs_cl_scale",
     "cfc11_release_factor": "mhalo_releasefactorc11",
     "stratospheric_delay": "gen_eesc_stratmixdelay",
@@ -419,15 +427,6 @@ def _thermal_expansion_coefficients(parameters: Mapping[str, Any]) -> Sequence[f
     return THERMAL_EXPANSION_FILES[file] if file else given
 
 
-FEEDBACK_START_YEARS = (
-    "ch4_feed_yrstart",
-    "co2_fertilization_yrstart",
-    "co2_tempfeedback_yrstart",
-    "n2o_feed_yrstart",
-)
-"""Years that MAGICC7 moves into the run when they fall outside it."""
-
-
 def _ch4_non_oh_lifetime(parameters: Mapping[str, Any]) -> float:
     """CH4 lifetime against soil, stratospheric and chlorine loss, as in MAGICC7."""
     p = parameters
@@ -440,18 +439,6 @@ def _ch4_oh_lifetime(parameters: Mapping[str, Any]) -> float:
     return 1.0 / (
         1.0 / parameters["ch4_tautot_init"] - 1.0 / _ch4_non_oh_lifetime(parameters)
     )
-
-
-def _ch4_burdens(
-    concentration: float, tg_per_ppb: float, mixing_box_size: float
-) -> dict[str, float]:
-    """Return initial CH4Oxidation pools, with all CH4 natural as in MAGICC7."""
-    return {
-        ATMOSPHERIC_BURDEN_CH4_FOSSIL: 0.0,
-        ATMOSPHERIC_BURDEN_CH4_BIOSPHERE: 0.0,
-        ATMOSPHERIC_BURDEN_CH4_PERMAFROST: 0.0,
-        ATMOSPHERIC_BURDEN_CH4_NATURAL: tg_per_ppb * concentration * mixing_box_size,
-    }
 
 
 @cache
@@ -768,7 +755,7 @@ def prescribed_forcing(
         natural_sox=p["sox_natural_emissions"],
     )
     solar = pr.on_axis(inputs["file_solar_rf"], years)[:, 0]
-    out["Solar"] = np.repeat(pr.solar(solar, p["rf_solar_scale"])[:, None], 4, axis=1)
+    out["Solar"] = np.repeat(solar[:, None], 4, axis=1)
     return out
 
 
@@ -788,24 +775,11 @@ def climate_parameters(
     p = parameters
     volcanic = inputs["file_volcanic_rf"]
     values = np.asarray(volcanic.values)
-    pattern = pr.volcanic_pattern(
-        volcanic.years,
-        values[:, 0],
-        values[:, 1],
-        start_year=start_year,
-        last_year=min(p["rf_volc_forc_pattern_max_last_year"], end_year or np.inf),
-        scale=p["rf_volcanic_scale"],
-    )
+    last_year = min(p["rf_volc_forc_pattern_max_last_year"], end_year or np.inf)
     base = {ours: p[theirs] for ours, theirs in CLIMATE_PARAMETERS.items()}
-    # MAGICC7 applies the northern threshold to both hemispheres by default
-    southern = "nh" if p["core_upwell_thresh_oneglobal"] else "sh"
-    base["upwelling_threshold_temperature_sh"] = p[
-        f"core_upwell_thresh_temp_{southern}"
-    ]
+    if not p["core_upwell_thresh_oneglobal"]:
+        base["upwelling_threshold_temperature_sh"] = p["core_upwell_thresh_temp_sh"]
     base["include_unset_lamcalc_error"] = _included(bugs)["unset_lamcalc_error"]
-    initial = ClimateUDEBBuilder.from_parameters(
-        cast("Any", {**base, "erf_2xco2": EFFICACY_ERF_2XCO2})
-    ).internal_efficacy(pattern)
     method = EFFICACY_METHODS[p["rf_efficacy_apply"]]
     return {
         **base,
@@ -819,8 +793,11 @@ def climate_parameters(
             values[:, 1],
             scale=p["rf_volcanic_scale"],
             efficacy=p["rf_efficacy_volc"] if method == "ar6" else 1.0,
-            internal_efficacy=initial if method != "none" else 1.0,
-            regional_pattern=pattern if method != "none" else None,
+            internal_efficacy=None if method != "none" else 1.0,
+            regional_pattern_years=(
+                (start_year, float(last_year)) if method != "none" else None
+            ),
+            initial_erf_2xco2=EFFICACY_ERF_2XCO2,
             until=end_year,
         ),
     }
@@ -842,6 +819,7 @@ def _agent(
         "efficacy": p.get(f"rf_efficacy_{key}", 1.0),
         "internal_efficacy": p[f"rf_intefficacy_{key}"],
         "regional_pattern": p.get(f"rf_regions_{key}", [1.0] * 4),
+        **({"scale": p[AGENT_SCALES[name]]} if name in AGENT_SCALES else {}),
         **extra,
     }
 
@@ -1755,9 +1733,6 @@ def from_magicc7(  # noqa: PLR0913
     )
     _check_bugs(v, bugs)
     v.raise_if_any()
-    p = p.new_child(
-        {k: float(np.clip(p[k], time[0], time[-1])) for k in FEEDBACK_START_YEARS}
-    )
     files = dict(input_files) if input_files is not None else _load_checked(v, p)
     _check_files(v, time, p, files)
     _check_aerosol_extension(v, time, data, files)
@@ -1784,7 +1759,6 @@ def from_magicc7(  # noqa: PLR0913
     switch = concentration_switch_years(time, p)
     nitrogen = nitrogen_parameters(p)
     source = "ncycle" if nitrogen and p["ncycle_apply_cn_initial_values"] else "co2"
-    feedback = bool(p["co2_tempfeedback_switch"])
     natural = natural_emissions(time, native, p, files, Convention.MAGICC7)
     components: dict[str, dict[str, Any]] = {
         "CH4Chemistry": {
@@ -1798,7 +1772,7 @@ def from_magicc7(  # noqa: PLR0913
         "CH4Oxidation": {
             **permafrost,
             "permafrost_fraction": p["pf_co2fromch4oxinatm_fraction"],
-            "non_oh_lifetime": _ch4_non_oh_lifetime(p),
+            **{ours: p[theirs] for ours, theirs in CH4_LIFETIMES.items()},
             "tg_per_ppb": p["ch4_ppb2tgch4"],
             "mixing_box_size": p["ch4_mixboxsize"],
             **_natural(natural, "CH4"),
@@ -1814,7 +1788,6 @@ def from_magicc7(  # noqa: PLR0913
             "include_variable_oh_lifetime": p["mhalo_use_tauoh_var"] == 1,
             "include_variable_stratospheric_lifetime": p["mhalo_use_taustrat_var"] == 1,
             "stratospheric_lifetime_sensitivity": p["mhalo_taustrat_sens2meridflux"],
-            "initial_ch4_oh_lifetime": _ch4_oh_lifetime(p),
             "fgas_switch_year": switch["fgas"],
             "montreal_gases_switch_year": switch["mhalo"],
             "fgas_forcing_scale": p["rf_fgassum_scale"],
@@ -1832,9 +1805,9 @@ def from_magicc7(  # noqa: PLR0913
             },
             **{
                 f"{ours}_temperature_sensitivity": p[f"co2_feedbackfactor_{theirs}"]
-                * feedback
                 for ours, theirs in TERRESTRIAL_FEEDBACKS.items()
             },
+            "include_temperature_feedback": bool(p["co2_tempfeedback_switch"]),
             **{ours: p[theirs] for ours, theirs in TERRESTRIAL_PARAMETERS.items()},
             "npp_pi": p[f"{source}_npp_initial"],
             "nitrogen": nitrogen,
@@ -1876,7 +1849,6 @@ def from_magicc7(  # noqa: PLR0913
     terrestrial = components["TerrestrialCarbon"]
     initial = {
         **{child(ATMOSPHERIC_CONCENTRATIONS, gas): c for gas, c in conc.items()},
-        **_ch4_burdens(conc["CH4"], p["ch4_ppb2tgch4"], p["ch4_mixboxsize"]),
         OCEAN_SURFACE_PARTIAL_PRESSURE_CO2: conc["CO2"],
         CUMULATIVE_CARBON_UPTAKE_OCEAN: 0.0,
         CARBON_POOL_PLANT: terrestrial["plant_pool_pi"],

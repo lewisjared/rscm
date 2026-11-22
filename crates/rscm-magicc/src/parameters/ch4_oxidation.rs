@@ -2,7 +2,7 @@
 //!
 //! Parameters for the CO2 released by oxidation of fossil methane.
 
-use crate::parameters::CH4ChemistryParameters;
+use crate::parameters::{ch4_non_oh_lifetime, CH4ChemistryParameters};
 use rscm_core::timeseries::FloatValue;
 use serde::{Deserialize, Serialize};
 
@@ -40,13 +40,20 @@ pub struct CH4OxidationParameters {
     /// unit: dimensionless
     pub mixing_box_size: FloatValue,
 
-    /// Combined soil, stratospheric and tropospheric chlorine lifetime.
+    /// Soil sink lifetime (MAGICC7 `CH4_TAUSOIL`)
     ///
     /// unit: yr
+    pub soil_lifetime: FloatValue,
+
+    /// Stratospheric sink lifetime (MAGICC7 `CH4_TAUSTRAT`)
     ///
-    /// The default combines the `CH4ChemistryParameters` sink lifetimes
-    /// (MAGICC7 `CH4_TAUSOIL`, `CH4_TAUSTRAT` and `CH4_TAUTROPCL`).
-    pub non_oh_lifetime: FloatValue,
+    /// unit: yr
+    pub stratospheric_lifetime: FloatValue,
+
+    /// Tropospheric Cl sink lifetime (MAGICC7 `CH4_TAUTROPCL`)
+    ///
+    /// unit: yr
+    pub tropospheric_cl_lifetime: FloatValue,
 
     /// Natural CH4 emissions
     ///
@@ -63,8 +70,79 @@ impl Default for CH4OxidationParameters {
             permafrost_fraction: 1.0,
             tg_per_ppb: chemistry.tg_per_ppb,
             mixing_box_size: chemistry.mixing_box_size,
-            non_oh_lifetime: chemistry.non_oh_lifetime(),
+            soil_lifetime: chemistry.soil_lifetime,
+            stratospheric_lifetime: chemistry.stratospheric_lifetime,
+            tropospheric_cl_lifetime: chemistry.tropospheric_cl_lifetime,
             natural_emissions: chemistry.natural_emissions,
         }
+    }
+}
+
+impl CH4OxidationParameters {
+    /// Combined soil, stratospheric and tropospheric chlorine lifetime, see [`ch4_non_oh_lifetime`]
+    pub fn non_oh_lifetime(&self) -> FloatValue {
+        ch4_non_oh_lifetime(
+            self.soil_lifetime,
+            self.stratospheric_lifetime,
+            self.tropospheric_cl_lifetime,
+        )
+    }
+
+    /// Initial natural CH4 burden at `concentration` ppb, with no anthropogenic CH4 in the atmosphere
+    ///
+    /// unit: Mt CH4
+    pub fn initial_natural_burden(&self, concentration: FloatValue) -> FloatValue {
+        self.tg_per_ppb * concentration * self.mixing_box_size
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parameters::HalocarbonChemistryParameters;
+
+    #[test]
+    fn test_derived_lifetimes_follow_the_stated_ch4_lifetimes() {
+        let chemistry = CH4ChemistryParameters {
+            soil_lifetime: 60.0,
+            stratospheric_lifetime: 100.0,
+            tropospheric_cl_lifetime: 250.0,
+            initial_ch4_lifetime: 9.0,
+            ..Default::default()
+        };
+        let oxidation = CH4OxidationParameters {
+            soil_lifetime: 60.0,
+            stratospheric_lifetime: 100.0,
+            tropospheric_cl_lifetime: 250.0,
+            ..Default::default()
+        };
+        let halocarbon = HalocarbonChemistryParameters {
+            initial_ch4_lifetime: 9.0,
+            ch4_soil_lifetime: 60.0,
+            ch4_stratospheric_lifetime: 100.0,
+            ch4_tropospheric_cl_lifetime: 250.0,
+            ..Default::default()
+        };
+        let non_oh = 1.0 / (1.0 / 60.0 + 1.0 / 100.0 + 1.0 / 250.0);
+        assert_eq!(oxidation.non_oh_lifetime(), non_oh);
+        assert_eq!(oxidation.non_oh_lifetime(), chemistry.non_oh_lifetime());
+        assert_eq!(
+            halocarbon.initial_ch4_oh_lifetime(),
+            1.0 / (1.0 / 9.0 - 1.0 / non_oh)
+        );
+        assert_eq!(
+            halocarbon.initial_ch4_oh_lifetime(),
+            chemistry.initial_oh_lifetime()
+        );
+    }
+
+    #[test]
+    fn test_initial_natural_burden() {
+        let p = CH4OxidationParameters {
+            tg_per_ppb: 2.0,
+            mixing_box_size: 0.5,
+            ..Default::default()
+        };
+        assert_eq!(p.initial_natural_burden(700.0), 2.0 * 700.0 * 0.5);
     }
 }

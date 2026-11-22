@@ -108,9 +108,19 @@
       "description": "Fraction of the atmosphere mixed with surface CH4 (MAGICC7 `CH4_MIXBOXSIZE`)\n\nunit: dimensionless"
     },
     {
-      "name": "non_oh_lifetime",
+      "name": "soil_lifetime",
       "type": "FloatValue",
-      "description": "Combined soil, stratospheric and tropospheric chlorine lifetime.\n\nunit: yr\n\nThe default combines the `CH4ChemistryParameters` sink lifetimes\n(MAGICC7 `CH4_TAUSOIL`, `CH4_TAUSTRAT` and `CH4_TAUTROPCL`)."
+      "description": "Soil sink lifetime (MAGICC7 `CH4_TAUSOIL`)\n\nunit: yr"
+    },
+    {
+      "name": "stratospheric_lifetime",
+      "type": "FloatValue",
+      "description": "Stratospheric sink lifetime (MAGICC7 `CH4_TAUSTRAT`)\n\nunit: yr"
+    },
+    {
+      "name": "tropospheric_cl_lifetime",
+      "type": "FloatValue",
+      "description": "Tropospheric Cl sink lifetime (MAGICC7 `CH4_TAUTROPCL`)\n\nunit: yr"
     },
     {
       "name": "natural_emissions",

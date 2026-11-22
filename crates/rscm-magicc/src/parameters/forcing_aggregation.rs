@@ -47,6 +47,10 @@ pub struct ForcingAgent {
     #[serde(default)]
     pub use_co2_internal_efficacy: bool,
 
+    /// Factor on each variable's ERF before the efficacy applies, such as MAGICC7's `RF_SOLAR_SCALE`.
+    #[serde(default = "one")]
+    pub scale: FloatValue,
+
     /// Efficacy (MAGICC7 `RF_EFFICACY_*`)
     ///
     /// unit: dimensionless

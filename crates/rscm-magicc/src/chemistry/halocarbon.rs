@@ -187,7 +187,7 @@ impl HalocarbonChemistry {
         let p = &self.parameters;
         let oh_scale = if p.include_variable_oh_lifetime {
             let window = input_state.get_scalar_window(LIFETIME_CH4_OH);
-            window.get() / p.initial_ch4_oh_lifetime
+            window.get() / p.initial_ch4_oh_lifetime()
         } else {
             1.0
         };

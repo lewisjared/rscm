@@ -4,7 +4,9 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use pyo3::{pymodule, Bound, PyResult};
 use rscm_core::names::{
-    HEAT_UPTAKE, OCEAN_HEAT_CONTENT, SEA_LEVEL_RISE_THERMAL_EXPANSION, SEA_SURFACE_TEMPERATURE,
+    ATMOSPHERIC_BURDEN_CH4_BIOSPHERE, ATMOSPHERIC_BURDEN_CH4_FOSSIL,
+    ATMOSPHERIC_BURDEN_CH4_NATURAL, ATMOSPHERIC_BURDEN_CH4_PERMAFROST, HEAT_UPTAKE,
+    OCEAN_HEAT_CONTENT, SEA_LEVEL_RISE_THERMAL_EXPANSION, SEA_SURFACE_TEMPERATURE,
     SURFACE_AIR_TEMPERATURE_CHANGE,
 };
 
@@ -61,6 +63,18 @@ impl ClimateUDEBBuilder {
         let component = ClimateUDEB::from_parameters(self.parameters.clone())
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
         Ok(component.internal_efficacy(&regional_pattern))
+    }
+
+    /// Regional pattern and first-years internal efficacy of the subannual forcing,
+    /// with any unset ones derived, or `None` without subannual forcing.
+    pub fn subannual_efficacy(&self) -> PyResult<Option<(Option<[f64; 4]>, f64)>> {
+        let component = ClimateUDEB::from_parameters(self.parameters.clone())
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        Ok(component
+            .parameters()
+            .subannual_forcing
+            .as_ref()
+            .map(|f| (f.regional_pattern, f.internal_efficacy.unwrap_or(1.0))))
     }
 
     #[staticmethod]
@@ -129,7 +143,42 @@ fn take_subannual_values<'py>(
 
 // Chemistry components
 create_component_builder!(CH4ChemistryBuilder, CH4Chemistry, CH4ChemistryParameters);
-create_component_builder!(CH4OxidationBuilder, CH4Oxidation, CH4OxidationParameters);
+
+/// Builder for `CH4Oxidation`, which also supplies its initial burdens.
+#[pyclass]
+pub struct CH4OxidationBuilder {
+    parameters: CH4OxidationParameters,
+}
+
+#[pymethods]
+impl CH4OxidationBuilder {
+    #[staticmethod]
+    pub fn from_parameters(parameters: Bound<PyAny>) -> PyResult<Self> {
+        let parameters = rscm_core::python::parameters::depythonize_parameters::<
+            CH4OxidationParameters,
+        >("CH4Oxidation", &parameters)?;
+        Ok(Self { parameters })
+    }
+
+    /// Initial CH4 burdens by source at `ch4_concentration` ppb, all of it natural.
+    pub fn initial_values(&self, ch4_concentration: f64) -> std::collections::HashMap<String, f64> {
+        std::collections::HashMap::from([
+            (ATMOSPHERIC_BURDEN_CH4_FOSSIL.into(), 0.0),
+            (ATMOSPHERIC_BURDEN_CH4_BIOSPHERE.into(), 0.0),
+            (
+                ATMOSPHERIC_BURDEN_CH4_NATURAL.into(),
+                self.parameters.initial_natural_burden(ch4_concentration),
+            ),
+            (ATMOSPHERIC_BURDEN_CH4_PERMAFROST.into(), 0.0),
+        ])
+    }
+
+    pub fn build(&self) -> PyRustComponent {
+        PyRustComponent(std::sync::Arc::new(CH4Oxidation::from_parameters(
+            self.parameters.clone(),
+        )))
+    }
+}
 create_component_builder!(N2OChemistryBuilder, N2OChemistry, N2OChemistryParameters);
 create_component_builder!(
     HalocarbonChemistryBuilder,

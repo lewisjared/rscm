@@ -52,20 +52,71 @@ pub struct SubannualForcing {
     /// A substep belongs to the year it ends in.
     #[serde(default)]
     pub regional_pattern: Option<[FloatValue; 4]>,
+    /// First and last year of the substeps whose scaled values give `regional_pattern` when it is unset
+    /// (MAGICC7 `RF_VOLC_FORC_PATTERN_MAX_LAST_YEAR` sets the last).
+    ///
+    /// The pattern is each box's mean less the area-weighted mean of the boxes and 1.
+    #[serde(default)]
+    pub regional_pattern_years: Option<[FloatValue; 2]>,
     /// Efficacy over the internal efficacy.
     #[serde(default = "one")]
     pub efficacy: FloatValue,
     /// Internal efficacy dividing `efficacy` in every year without `regional_pattern`,
     /// and in the first two years with it.
-    #[serde(default = "one")]
-    pub internal_efficacy: FloatValue,
+    ///
+    /// Unset, it is that of the regional pattern at `initial_erf_2xco2`, or 1 without a pattern.
+    #[serde(default)]
+    pub internal_efficacy: Option<FloatValue>,
+    /// 2xCO2 effective radiative forcing behind an unset `internal_efficacy`
+    ///
+    /// unit: W/m^2
+    ///
+    /// MAGICC7 uses 3.71 until the run calculates the forcing.
+    #[serde(default = "efficacy_erf_2xco2")]
+    pub initial_erf_2xco2: FloatValue,
 }
 
 fn one() -> FloatValue {
     1.0
 }
 
+fn efficacy_erf_2xco2() -> FloatValue {
+    3.71
+}
+
 impl SubannualForcing {
+    /// Each box's mean scaled value over the substeps ending in `[first, last + 1)`,
+    /// less the area-weighted mean of the boxes and 1.
+    ///
+    /// Returns `None` when no substep ends in the window.
+    pub fn pattern_over(
+        &self,
+        first: FloatValue,
+        last: FloatValue,
+        steps_per_year: usize,
+        area: &[FloatValue; 4],
+    ) -> Option<[FloatValue; 4]> {
+        let steps = steps_per_year as FloatValue;
+        let mut sums = [0.0; 4];
+        let mut n = 0usize;
+        for (i, values) in self.values.iter().enumerate() {
+            let end = self.start + (i + 1) as FloatValue / steps;
+            if end >= first && end < last + 1.0 {
+                for (sum, v) in sums.iter_mut().zip(values) {
+                    *sum += v * self.scale;
+                }
+                n += 1;
+            }
+        }
+        if n == 0 {
+            return None;
+        }
+        let means = sums.map(|s| s / n as FloatValue);
+        let mean =
+            means[0] * area[0] + means[1] * area[1] + means[2] * area[2] + means[3] * area[3];
+        Some(means.map(|m| m - mean - 1.0))
+    }
+
     /// Forcing for substep `step` (1-based) of the year starting at `year_start`.
     pub fn at(
         &self,
@@ -178,9 +229,9 @@ pub struct ClimateUDEBParameters {
     ///
     /// unit: K
     ///
-    /// Default: 8.0
+    /// Unset, it is the NH threshold, as with MAGICC7's default `CORE_UPWELL_THRESH_ONEGLOBAL`.
     /// MAGICC7: CORE_UPWELL_THRESH_TEMP_SH
-    pub upwelling_threshold_temperature_sh: FloatValue,
+    pub upwelling_threshold_temperature_sh: Option<FloatValue>,
 
     // Climate sensitivity parameters
     /// Equilibrium climate sensitivity, the equilibrium warming after CO2 doubles
@@ -425,7 +476,7 @@ impl Default for ClimateUDEBParameters {
             initial_upwelling_rate: 3.5,
             upwelling_variable_fraction: 0.7,
             upwelling_threshold_temperature_nh: 8.0,
-            upwelling_threshold_temperature_sh: 8.0,
+            upwelling_threshold_temperature_sh: None,
 
             // Climate sensitivity
             ecs: 3.0,

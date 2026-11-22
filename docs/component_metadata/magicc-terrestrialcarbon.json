@@ -156,6 +156,11 @@
       "description": "Year from which warming drives the temperature feedbacks (MAGICC7 `CO2_TEMPFEEDBACK_YRSTART`).\n\nunit: yr\n\nFeedbacks use the warming since this year, floored at zero."
     },
     {
+      "name": "include_temperature_feedback",
+      "type": "bool",
+      "description": "Apply the temperature feedbacks on NPP, respiration and decay (MAGICC7 `CO2_TEMPFEEDBACK_SWITCH`)"
+    },
+    {
       "name": "plant_pool_pi",
       "type": "FloatValue",
       "description": "Pre-industrial plant pool carbon content (MAGICC7 `CO2_PLANTPOOL_INITIAL`)\n\nunit: GtC"

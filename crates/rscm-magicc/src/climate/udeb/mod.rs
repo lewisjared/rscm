@@ -238,15 +238,20 @@ impl ClimateUDEB {
             )));
         }
 
+        let mut parameters = parameters;
+        if let Some(f) = parameters.subannual_forcing.take() {
+            parameters.subannual_forcing = Some(Self::resolve_subannual(&parameters, f)?);
+        }
         if let Some(f) = &parameters.subannual_forcing {
+            let internal = f.internal_efficacy.unwrap_or(1.0);
             if !(f.scale.is_finite() && f.efficacy.is_finite())
-                || !f.internal_efficacy.is_finite()
-                || f.internal_efficacy == 0.0
+                || !internal.is_finite()
+                || internal == 0.0
             {
                 return Err(RSCMError::Error(format!(
                     "invalid subannual_forcing: scale and efficacy must be finite and \
                      internal_efficacy finite and nonzero, got {}, {} and {}",
-                    f.scale, f.efficacy, f.internal_efficacy
+                    f.scale, f.efficacy, internal
                 )));
             }
         }
@@ -294,6 +299,53 @@ impl ClimateUDEB {
         })
     }
 
+    /// Subannual forcing with its regional pattern and internal efficacy filled in when unset.
+    fn resolve_subannual(
+        parameters: &ClimateUDEBParameters,
+        mut forcing: SubannualForcing,
+    ) -> RSCMResult<SubannualForcing> {
+        let area = *parameters.grid().weights();
+        if let (None, Some([first, last])) =
+            (forcing.regional_pattern, forcing.regional_pattern_years)
+        {
+            forcing.regional_pattern = Some(
+                forcing
+                    .pattern_over(first, last, parameters.steps_per_year, &area)
+                    .ok_or_else(|| {
+                        RSCMError::Error(format!(
+                            "invalid subannual_forcing: no substep ends in regional_pattern_years \
+                             {first} to {last}"
+                        ))
+                    })?,
+            );
+        }
+        if forcing.internal_efficacy.is_none() {
+            forcing.internal_efficacy = Some(match &forcing.regional_pattern {
+                None => 1.0,
+                Some(pattern) => {
+                    let erf_2xco2 = forcing.initial_erf_2xco2;
+                    let lam =
+                        lamcalc::lamcalc(&parameters.lamcalc_parameters(parameters.ecs, erf_2xco2))
+                            .ok_or_else(|| {
+                                RSCMError::Error(format!(
+                                "LAMCALC iteration failed to converge for ECS={} at the subannual \
+                                 forcing's initial_erf_2xco2={erf_2xco2}",
+                                parameters.ecs
+                            ))
+                            })?;
+                    lamcalc::calc_internal_efficacy(
+                        erf_2xco2,
+                        &lam.matrix_inverse,
+                        &area,
+                        pattern,
+                        parameters.ecs,
+                    )
+                }
+            });
+        }
+        Ok(forcing)
+    }
+
     /// Get the inverse of the converged LAMCALC coupling matrix.
     pub fn matrix_inverse(&self) -> &[[FloatValue; 4]; 4] {
         &self.matrix_inverse
@@ -302,6 +354,11 @@ impl ClimateUDEB {
     /// Get the CO2 internal efficacy from the initial LAMCALC solve.
     pub fn co2_internal_efficacy(&self) -> FloatValue {
         self.co2_internal_efficacy
+    }
+
+    /// Parameters, with the subannual forcing's unset pattern and internal efficacy derived.
+    pub fn parameters(&self) -> &ClimateUDEBParameters {
+        &self.parameters
     }
 
     /// Get the per-box CO2 forcing fractions.
@@ -630,15 +687,14 @@ impl ClimateUDEB {
             .subannual_forcing
             .as_ref()
             .map_or((1.0, 1.0), |f| {
+                let initial = f.internal_efficacy.unwrap_or(1.0);
                 let (previous, current) = if f.regional_pattern.is_some() {
-                    let current = state
-                        .subannual_next_internal_efficacy
-                        .unwrap_or(f.internal_efficacy);
+                    let current = state.subannual_next_internal_efficacy.unwrap_or(initial);
                     let previous = state.subannual_internal_efficacy.unwrap_or(current);
                     state.subannual_internal_efficacy = Some(current);
                     (previous, current)
                 } else {
-                    (f.internal_efficacy, f.internal_efficacy)
+                    (initial, initial)
                 };
                 (
                     f.scale * (f.efficacy / previous),
@@ -1992,7 +2048,9 @@ mod tests {
             values: vec![box_values; 36],
             scale: 1.0,
             regional_pattern: Some(pattern),
-            internal_efficacy: 2.0,
+            regional_pattern_years: None,
+            initial_erf_2xco2: 3.71,
+            internal_efficacy: Some(2.0),
             efficacy: 1.0,
         }))
         .unwrap();
@@ -2030,7 +2088,9 @@ mod tests {
                 .collect(),
             scale: 1.0,
             regional_pattern: None,
-            internal_efficacy: 1.0,
+            regional_pattern_years: None,
+            initial_erf_2xco2: 3.71,
+            internal_efficacy: Some(1.0),
             efficacy: 1.0,
         }))
         .unwrap();
@@ -2061,7 +2121,9 @@ mod tests {
                     values: vec![values; 24],
                     scale,
                     regional_pattern: None,
-                    internal_efficacy,
+                    regional_pattern_years: None,
+                    initial_erf_2xco2: 3.71,
+                    internal_efficacy: Some(internal_efficacy),
                     efficacy,
                 }),
                 ..Default::default()
@@ -2085,6 +2147,113 @@ mod tests {
     }
 
     #[test]
+    fn test_subannual_pattern_and_internal_efficacy_follow_parameters() {
+        // Two years of substeps: 2000 has NH 1 and SH 3, 2001 has NH 5 and SH 7
+        let values: Vec<_> = (0..24)
+            .map(|i| {
+                if i < 12 {
+                    [1.0, 1.0, 3.0, 3.0]
+                } else {
+                    [5.0, 5.0, 7.0, 7.0]
+                }
+            })
+            .collect();
+        let subannual = |years, scale| SubannualForcing {
+            start: 2000.0,
+            values: values.clone(),
+            scale,
+            regional_pattern: None,
+            regional_pattern_years: Some(years),
+            initial_erf_2xco2: 3.71,
+            internal_efficacy: None,
+            efficacy: 1.0,
+        };
+        let resolved = |ecs, years, scale| {
+            let component = ClimateUDEB::from_parameters(ClimateUDEBParameters {
+                ecs,
+                subannual_forcing: Some(subannual(years, scale)),
+                ..Default::default()
+            })
+            .unwrap();
+            let f = component.parameters.subannual_forcing.unwrap();
+            (f.regional_pattern.unwrap(), f.internal_efficacy.unwrap())
+        };
+
+        let area = *ClimateUDEBParameters::default().grid().weights();
+        let expected = |north: FloatValue, south: FloatValue| {
+            let mean = north * area[0] + north * area[1] + south * area[2] + south * area[3];
+            [north, north, south, south].map(|m| m - mean - 1.0)
+        };
+        // A window ends before the substep ending on the next January.
+        let (pattern, _) = resolved(3.0, [2000.0, 2000.0], 1.0);
+        assert_eq!(pattern, expected(1.0, 3.0));
+
+        let (scaled, _) = resolved(3.0, [2000.0, 2001.0], 0.5);
+        let north = (12.0 * 0.5 + 11.0 * 2.5) / 23.0;
+        let south = (12.0 * 1.5 + 11.0 * 3.5) / 23.0;
+        for (a, b) in scaled.iter().zip(expected(north, south)) {
+            assert!((a - b).abs() < 1e-12, "{a} vs {b}");
+        }
+
+        for ecs in [2.0, 4.5] {
+            let (pattern, internal) = resolved(ecs, [2000.0, 2001.0], 0.74);
+            let reference = ClimateUDEB::from_parameters(ClimateUDEBParameters {
+                ecs,
+                erf_2xco2: 3.71,
+                ..Default::default()
+            })
+            .unwrap()
+            .internal_efficacy(&pattern);
+            assert_eq!(internal, reference);
+        }
+        assert_ne!(
+            resolved(2.0, [2000.0, 2001.0], 0.74).1,
+            resolved(4.5, [2000.0, 2001.0], 0.74).1
+        );
+    }
+
+    #[test]
+    fn test_unset_sh_upwelling_threshold_follows_nh() {
+        let run = |nh, sh| {
+            let component = ClimateUDEB::from_parameters(ClimateUDEBParameters {
+                upwelling_threshold_temperature_nh: nh,
+                upwelling_threshold_temperature_sh: sh,
+                ..Default::default()
+            })
+            .unwrap();
+            let items = yearly_items([0.0, 4.0, 8.0, 12.0]);
+            let mut state = component.initial_state();
+            for year in [2000.0, 2001.0, 2002.0] {
+                let input_state = InputState::build(items.iter().collect(), year);
+                component
+                    .solve_with_state(year, year + 1.0, &input_state, &mut state)
+                    .unwrap();
+            }
+            state.upwelling_rates
+        };
+        assert_eq!(run(2.0, None), run(2.0, Some(2.0)));
+        assert_ne!(run(2.0, None), run(2.0, Some(8.0)));
+    }
+
+    #[test]
+    fn test_subannual_forcing_rejects_empty_pattern_window() {
+        let result = ClimateUDEB::from_parameters(ClimateUDEBParameters {
+            subannual_forcing: Some(SubannualForcing {
+                start: 2000.0,
+                values: vec![[1.0; 4]; 12],
+                scale: 1.0,
+                regional_pattern: None,
+                regional_pattern_years: Some([1900.0, 1950.0]),
+                initial_erf_2xco2: 3.71,
+                internal_efficacy: None,
+                efficacy: 1.0,
+            }),
+            ..Default::default()
+        });
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_subannual_forcing_rejects_zero_internal_efficacy() {
         let result = ClimateUDEB::from_parameters(ClimateUDEBParameters {
             subannual_forcing: Some(SubannualForcing {
@@ -2092,7 +2261,9 @@ mod tests {
                 values: vec![[1.0; 4]; 12],
                 scale: 1.0,
                 regional_pattern: None,
-                internal_efficacy: 0.0,
+                regional_pattern_years: None,
+                initial_erf_2xco2: 3.71,
+                internal_efficacy: Some(0.0),
                 efficacy: 1.0,
             }),
             ..Default::default()
@@ -2125,7 +2296,9 @@ mod tests {
                     values: vec![values; 12],
                     scale: 1.0,
                     regional_pattern: None,
-                    internal_efficacy: 1.0,
+                    regional_pattern_years: None,
+                    initial_erf_2xco2: 3.71,
+                    internal_efficacy: Some(1.0),
                     efficacy: 1.0,
                 }),
                 ..Default::default()
