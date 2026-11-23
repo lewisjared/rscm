@@ -324,9 +324,10 @@ config, inputs = full.from_magicc7(time_axis, emissions, bugs=())  # fix them al
 config, inputs = full.from_magicc7(time_axis, emissions, bugs=["unset_lamcalc_error"])
 ```
 
-Each sets an `include_*` parameter of the component it affects,
+The LAMCALC and Antarctic bugs set an `include_*` parameter of the component they affect,
 `ClimateUDEB` and `ForcingAggregation` for LAMCALC and `SeaLevelRise` for Antarctic discharge.
 The components default to reproducing them too.
+The NH3 bug changes the deposition input that `from_magicc7` builds.
 
 ## Agreement with MAGICC7
 

@@ -230,7 +230,7 @@ plt.show()
 # %% [markdown]
 # ## Inspecting Aggregates
 #
-# The schema adds an `AggregateComponent` to the model for its aggregates.
+# The schema adds a component to the model for each aggregate, labelled with the aggregate's name.
 # `coupling()` lists it after the two forcing components, with both forcings as inputs.
 
 # %%
@@ -573,19 +573,27 @@ except ValueError as e:
 # ### Build-Time Validation
 #
 # With a schema attached, the model builder also checks every component against it.
-# A component that reads or writes a variable missing from the schema fails to build,
-# as does one that declares a unit with a different dimension.
-# Here the aerosol component meets the GHG-only schema from earlier.
-# Add the missing variable with `add_variable()`.
+# A schema is an override: a variable it omits is stored as its producer declares it.
+# A component that declares a unit with a different dimension from the schema's fails to build.
+# Here the CO2 forcing is declared in kelvin, against the schema's `W/m^2`.
+
 
 # %%
+class MislabelledCO2Forcing(CO2Forcing):
+    """CO2 forcing that declares its output in the wrong unit."""
+
+    forcing = Output("Effective Radiative Forcing|CO2", unit="K")
+
+
 try:
     (
         ModelBuilder()
         .with_schema(schema)
         .with_time_axis(time_axis)
-        .with_component(AerosolForcing())
-        .with_prescribed_variable("Emissions|SOx", aerosol_emissions)
+        .with_component(MislabelledCO2Forcing())
+        .with_component(CH4Forcing())
+        .with_prescribed_variable("Atmospheric Concentrations|CO2", co2_conc)
+        .with_prescribed_variable("Atmospheric Concentrations|CH4", ch4_conc)
     ).build()
 except ValueError as e:
     print(f"Error: {e}")

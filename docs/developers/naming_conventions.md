@@ -24,7 +24,7 @@ When a rule and the code disagree, fix one of them in the same PR.
 - `RustComponent` is the protocol a Rust component satisfies in Python.
 - A builder adds any component with `with_component`, in Rust and in Python.
 - `Builder` names an object, and `build_` a function that returns a `Model`: `ModelBuilder`, `build_models`.
-- A function that returns a list of components is `components`: `rscm.fair.config.components`.
+- A function that returns components by label is `components`: `rscm.fair.config.components`.
 - A function that returns components as specs by name is `component_specs`: `rscm.fair.config.component_specs`.
 - Each model package has `setup_model`, which returns a `ModelSetup`.
   Building, running and running in parallel are shared: `setup.build()`, `setup.run()`, `run_all(setups)`.
@@ -189,3 +189,10 @@ The constants in `rscm_core::names` are the settled names, so look there before 
 6. Import the constant in every other Rust module, Python module and test.
 7. If another convention spells it differently, add the mapping to the tables in `python/rscm/names.py`.
 8. Renaming a variable is a breaking change, so it needs a `breaking` changelog fragment.
+
+## Retired names
+
+`naming-denylist.txt` lists identifiers that have been renamed, one regular expression per line.
+`scripts/check_naming.py` reports any that reappear, and the pre-commit hook runs it.
+Add the old name to the denylist when a rename lands.
+A line that must keep a retired name carries a `naming: allow` comment.

@@ -63,6 +63,7 @@ rscm/
 │       ├── components.py     # Builders for rscm-components
 │       ├── names.py          # Shared variable names and unit tables
 │       ├── spec.py           # ModelSetup and run_all, shared by the model packages
+│       ├── validation.py     # InputValidationError and its issues
 │       ├── two_layer/        # Two-layer model namespace
 │       ├── magicc/           # MAGICC builders and models
 │       ├── fair/             # FaIR builders and models
@@ -137,6 +138,7 @@ Write it in Rust, with the `ComponentIO` derive macro, for performance or comple
 | `make test`                              | Rebuild, then run all tests (Rust and Python)  |
 | `cargo test --workspace --exclude rscm`  | Run Rust tests only                            |
 | `uv run pytest -m "not slow"`            | Run Python tests, skipping slow ones           |
+| `make parity`                            | Rebuild, then run the MAGICC7 parity tests     |
 | `make lint`                              | Run ruff, mypy, rustfmt and clippy             |
 | `make format`                            | Format code (ruff and rustfmt)                 |
 | `make validate-pyi`                      | Check `.pyi` stubs match the compiled module   |

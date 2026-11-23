@@ -639,7 +639,7 @@ impl PyEnsembleSampler {
     /// target : Target
     ///     Target observations to calibrate against
     /// a : float
-    ///     Stretch move parameter (default is 2.0). Must be finite and greater than 1.
+    ///     Stretch move parameter, finite and greater than 1.
     ///
     /// Returns
     /// -------

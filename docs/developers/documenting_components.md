@@ -103,10 +103,11 @@ A `unit:` line in a parameter's doc comment fills the Unit column of the paramet
 | `slug`                               | Page name, prefixed for `rscm-magicc` and `rscm-fair` |
 | `reference_model`                    | `MAGICC7` or `FaIR` for ported components             |
 | `variables_from_parameters`          | Set for components that derive `ComponentMetadata`    |
+| `language`                           | Implementation language                               |
 | `description`                        | The combined doc comments                             |
 | `category`, `tags`                   | From the `#[component(...)]` attribute                |
 | `inputs`, `outputs`, `states`        | Name, unit, grid and description of each IO field     |
-| `parameters`                         | Name, type and doc comment for each parameter         |
+| `parameters`                         | Name, type, unit, default and doc comment of each     |
 
 ### Parameters
 

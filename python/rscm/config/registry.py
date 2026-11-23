@@ -9,7 +9,7 @@ Examples
 >>> from rscm.config.registry import component_registry, register_component
 >>>
 >>> @register_component("MyComponent")
->>> class MyComponentBuilder:
+... class MyComponentBuilder:
 ...     pass
 >>>
 >>> component_registry.get("MyComponent")
@@ -38,6 +38,7 @@ class ComponentRegistry:
 
     Examples
     --------
+    >>> from rscm.two_layer import TwoLayerBuilder
     >>> registry = ComponentRegistry()
     >>> registry.register("TwoLayer", TwoLayerBuilder)
     >>> registry.get("TwoLayer")
@@ -143,7 +144,7 @@ def register_component(
     Examples
     --------
     >>> @register_component("TwoLayer")
-    >>> class TwoLayerBuilder:
+    ... class TwoLayerBuilder:
     ...     pass
     """
 

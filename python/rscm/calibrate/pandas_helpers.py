@@ -123,6 +123,7 @@ def target_from_dataframe(  # noqa: PLR0913
     relative_error : float, optional
         If given, each uncertainty is `relative_error * abs(value)`
         and any uncertainty column is ignored.
+        A zero value then has no uncertainty and is rejected.
 
     Returns
     -------
@@ -140,6 +141,7 @@ def target_from_dataframe(  # noqa: PLR0913
 
     Examples
     --------
+    >>> from rscm.calibrate import Target
     >>> # Single variable with absolute uncertainties
     >>> df = pd.DataFrame(
     ...     {
@@ -170,7 +172,7 @@ def target_from_dataframe(  # noqa: PLR0913
     >>> df = pd.DataFrame(
     ...     {
     ...         "time": [1850, 1900, 1950, 2000],
-    ...         "value": [0.0, 0.2, 0.5, 1.0],
+    ...         "value": [0.1, 0.2, 0.5, 1.0],
     ...     }
     ... )
     >>> target = Target.from_dataframe(df, variable="y", relative_error=0.1)

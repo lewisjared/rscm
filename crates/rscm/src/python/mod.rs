@@ -17,6 +17,7 @@
 //! ├── components               # Generic components from rscm-components
 //! ├── two_layer                # Two-layer model from rscm-two-layer
 //! ├── magicc                   # MAGICC components from rscm-magicc
+//! ├── calibrate                # Calibration from rscm-calibrate
 //! └── fair                     # FaIR components from rscm-fair
 //! ```
 //!
@@ -32,6 +33,7 @@
 //! - `components` module: [`rscm_components::python::components`]
 //! - `two_layer` module: [`rscm_two_layer::python::two_layer`]
 //! - `magicc` module: [`rscm_magicc::python::magicc`]
+//! - `calibrate` module: [`rscm_calibrate::python::calibrate`]
 //! - `fair` module: [`rscm_fair::python::fair`]
 
 use pyo3::prelude::*;

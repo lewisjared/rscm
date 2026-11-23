@@ -14,7 +14,7 @@ Examples
 >>> from rscm.config.parameters import parameter, validate_parameters
 >>>
 >>> @dataclass
->>> class MyParameters:
+... class MyParameters:
 ...     value: float = parameter(default=5.0, range=(0, 10), unit="K")
 >>>
 >>> params = MyParameters(value=15.0)
