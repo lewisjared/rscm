@@ -143,23 +143,10 @@ fn take_subannual_values<'py>(
 
 // Chemistry components
 create_component_builder!(CH4ChemistryBuilder, CH4Chemistry, CH4ChemistryParameters);
-
-/// Builder for `CH4Oxidation`, which also supplies its initial burdens.
-#[pyclass]
-pub struct CH4OxidationBuilder {
-    parameters: CH4OxidationParameters,
-}
+create_component_builder!(CH4OxidationBuilder, CH4Oxidation, CH4OxidationParameters);
 
 #[pymethods]
 impl CH4OxidationBuilder {
-    #[staticmethod]
-    pub fn from_parameters(parameters: Bound<PyAny>) -> PyResult<Self> {
-        let parameters = rscm_core::python::parameters::depythonize_parameters::<
-            CH4OxidationParameters,
-        >("CH4Oxidation", &parameters)?;
-        Ok(Self { parameters })
-    }
-
     /// Initial CH4 burdens by source at `ch4_concentration` ppb, all of it natural.
     pub fn initial_values(&self, ch4_concentration: f64) -> std::collections::HashMap<String, f64> {
         std::collections::HashMap::from([
@@ -171,12 +158,6 @@ impl CH4OxidationBuilder {
             ),
             (ATMOSPHERIC_BURDEN_CH4_PERMAFROST.into(), 0.0),
         ])
-    }
-
-    pub fn build(&self) -> PyRustComponent {
-        PyRustComponent(std::sync::Arc::new(CH4Oxidation::from_parameters(
-            self.parameters.clone(),
-        )))
     }
 }
 create_component_builder!(N2OChemistryBuilder, N2OChemistry, N2OChemistryParameters);
