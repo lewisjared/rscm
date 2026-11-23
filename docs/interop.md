@@ -72,7 +72,10 @@ Each variable is a data variable on the `time` and `region` dimensions,
 NaN in the regions of other grids.
 Its attributes hold its `unit`, its `grid`, its `interpolation_strategy` and,
 for a grid variable, its `grid_weights`.
-A `time_bounds` coordinate holds the time axis.
+A `time_bounds` coordinate holds the time axis when every series shares one.
+Otherwise each variable keeps its own in a `time_bounds` attribute.
+A variable named `time`, `region`, `bound` or `time_bounds` clashes with the coordinates,
+so `to_xarray` raises `ValueError` for one.
 
 ## Reading data back
 
@@ -88,6 +91,7 @@ collection = from_dataframe(results)
 
 The DataFrame's `attrs` and the Dataset's attributes keep the time axis, interpolation strategies
 and grid weights, so converting to pandas or xarray and back gives the same timeseries.
+This holds for series on different time axes too: each is read back on its own axis.
 A file such as a CSV keeps none of them.
 Pass them when reading one, or the last step is as long as the one before,
 interpolation is linear and grids have their default weights:
@@ -147,6 +151,9 @@ model = setup_model(config, inputs, time_axis).run()
 
 `from_inputs(inputs, time_axis)` goes the other way,
 so `from_inputs(inputs, time_axis).to_dataframe()` shows the inputs that `from_magicc7` or `from_fair` translated.
+The inputs carry only values and units.
+`from_inputs` takes `interpolation_strategy` and `grid_weights` as `from_dataframe` does,
+and otherwise reads every series as linear on its grid's default weights.
 `to_inputs` keeps each series' unit, so the DataFrame must use the units the model's components declare.
 `from_magicc7` takes its emissions keyed by species and sector, such as `CO2|Fossil`,
 so a scenario of MAGICC emissions goes in as its `emissions` argument rather than through `to_inputs`.

@@ -36,7 +36,8 @@ and grids have their default weights.
 xarray is optional, installed with the `xarray` extra.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -138,6 +139,95 @@ def _items(
     return list(timeseries.items())
 
 
+@dataclass
+class _Table:
+    """Every series as rows of one array on the union of their step starts."""
+
+    variables: list[str]
+    units: list[str]
+    regions: list[str]
+    values: NDArray[np.float64]
+    times: NDArray[np.float64]
+    rows: dict[str, slice]
+    grids: dict[str, GridType]
+    strategies: dict[str, str]
+    weights: dict[str, list[float]]
+    bounds: list[list[float]]
+    axis_index: dict[str, int]
+
+
+def _table(
+    timeseries: TimeseriesCollection | Mapping[str, AnyTimeseries],
+    global_mean: bool,
+) -> _Table:
+    variables: list[str] = []
+    units: list[str] = []
+    regions: list[str] = []
+    blocks: list[NDArray[np.float64]] = []
+    rows: dict[str, slice] = {}
+    grids: dict[str, GridType] = {}
+    strategies: dict[str, str] = {}
+    weights: dict[str, list[float]] = {}
+    axes: list[TimeAxis] = []
+    axis_index: dict[str, int] = {}
+    for name, ts in _items(timeseries):
+        grid = _grid_of(ts)
+        values = np.asarray(ts.values(), dtype=np.float64).reshape(len(ts), -1).T
+        labels = list(REGIONS[grid])
+        if not isinstance(ts, Timeseries):
+            weights[name] = [float(w) for w in ts.grid.weights()]
+            if global_mean:
+                values = np.vstack([ts.global_mean().values(), values])
+                labels = ["World", *labels]
+        axis = ts.time_axis
+        index = next((i for i, known in enumerate(axes) if known == axis), len(axes))
+        if index == len(axes):
+            axes.append(axis)
+        axis_index[name] = index
+        rows[name] = slice(len(variables), len(variables) + len(labels))
+        variables += [name] * len(labels)
+        units += [ts.unit] * len(labels)
+        regions += labels
+        blocks.append(values)
+        grids[name] = grid
+        strategies[name] = _name_of(ts.interpolation_strategy, _STRATEGIES)
+
+    starts = [np.asarray(axis.values(), dtype=np.float64) for axis in axes]
+    if len(axes) == 1:
+        times = starts[0]
+        table = np.vstack(blocks)
+    else:
+        times = np.unique(np.concatenate(starts)) if starts else np.empty(0)
+        table = np.full((len(variables), len(times)), np.nan)
+        columns = [np.searchsorted(times, s) for s in starts]
+        for name, block in zip(rows, blocks):
+            table[rows[name], columns[axis_index[name]]] = block
+    return _Table(
+        variables,
+        units,
+        regions,
+        table,
+        times,
+        rows,
+        grids,
+        strategies,
+        weights,
+        [np.asarray(axis.bounds(), dtype=np.float64).tolist() for axis in axes],
+        axis_index,
+    )
+
+
+def _attrs(table: _Table) -> dict[str, Any]:
+    attrs: dict[str, Any] = {
+        "interpolation_strategy": table.strategies,
+        "grid_weights": table.weights,
+        "time_bounds": table.bounds,
+    }
+    if len(table.bounds) > 1:
+        attrs["time_axis_index"] = table.axis_index
+    return attrs
+
+
 def to_dataframe(
     timeseries: TimeseriesCollection | Mapping[str, AnyTimeseries],
     *,
@@ -160,38 +250,15 @@ def to_dataframe(
     with a column per step start.
     Series on different time axes share the union of their times, with NaN elsewhere.
     """
-    blocks: list[pd.DataFrame] = []
-    strategies: dict[str, str] = {}
-    weights: dict[str, list[float]] = {}
-    axes: list[TimeAxis] = []
-    for name, ts in _items(timeseries):
-        grid = _grid_of(ts)
-        values = np.asarray(ts.values(), dtype=np.float64).reshape(len(ts), -1)
-        regions = list(REGIONS[grid])
-        if not isinstance(ts, Timeseries):
-            weights[name] = [float(w) for w in ts.grid.weights()]
-            if global_mean:
-                values = np.column_stack([ts.global_mean().values(), values])
-                regions = ["World", *regions]
-        strategies[name] = _name_of(ts.interpolation_strategy, _STRATEGIES)
-        rows = [(name, ts.unit, region) for region in regions]
-        blocks.append(
-            pd.DataFrame(
-                values.T,
-                index=pd.MultiIndex.from_tuples(rows, names=INDEX),
-                columns=ts.time_axis.values(),
-            )
-        )
-        axes.append(ts.time_axis)
-    if blocks:
-        df = pd.concat(blocks).sort_index(axis="columns")
-    else:
-        df = pd.DataFrame(index=pd.MultiIndex.from_tuples([], names=INDEX))
-    df.columns.name = "time"
-    common = bool(axes) and all(axis == axes[0] for axis in axes)
-    df.attrs = {"interpolation_strategy": strategies, "grid_weights": weights}
-    if common:
-        df.attrs["time_bounds"] = [float(b) for b in axes[0].bounds()]
+    table = _table(timeseries, global_mean)
+    df = pd.DataFrame(
+        table.values,
+        index=pd.MultiIndex.from_arrays(
+            [table.variables, table.units, table.regions], names=INDEX
+        ),
+        columns=pd.Index(table.times, name="time"),
+    )
+    df.attrs.update(_attrs(table))
     return df
 
 
@@ -214,7 +281,9 @@ def _wide(df: pd.DataFrame) -> pd.DataFrame:
             )
             raise ValueError(msg)
         df = df.droplevel(level)
-    return df.reorder_levels(list(INDEX))
+    if list(df.index.names) != list(INDEX):
+        df = df.reorder_levels(list(INDEX))
+    return df
 
 
 def _times(columns: pd.Index) -> NDArray[np.float64]:
@@ -229,16 +298,18 @@ def _times(columns: pd.Index) -> NDArray[np.float64]:
 
 
 def _axis(
-    times: NDArray[np.float64], attrs: Mapping[Any, Any], time_axis: TimeAxis | None
+    times: NDArray[np.float64],
+    bounds: Sequence[float] | None,
+    time_axis: TimeAxis | None,
 ) -> TimeAxis:
     if time_axis is not None:
         if not np.array_equal(time_axis.values(), times):
             msg = "time_axis must start a step at each time column"
             raise ValueError(msg)
         return time_axis
-    bounds = np.asarray(attrs.get("time_bounds", []), dtype=np.float64)
-    if len(bounds) == len(times) + 1 and np.array_equal(bounds[:-1], times):
-        return TimeAxis.from_bounds(bounds)
+    edges = np.asarray(bounds if bounds is not None else [], dtype=np.float64)
+    if len(edges) == len(times) + 1 and np.array_equal(edges[:-1], times):
+        return TimeAxis.from_bounds(edges)
     return TimeAxis.from_values(times)
 
 
@@ -272,6 +343,66 @@ def _pick_grid(name: str, regions: Sequence[str]) -> GridType:
             return grid
     msg = f"'{name}' has regions {list(regions)}, which complete no grid"
     raise ValueError(msg)
+
+
+@dataclass
+class _Entry:
+    """One variable read from a DataFrame or Dataset, before it becomes a series."""
+
+    name: str
+    unit: str
+    regions: list[str]
+    values: NDArray[np.float64]
+    strategy: str | None
+    weights: Sequence[float] | None
+    bounds: Sequence[float] | None
+
+
+def _read(  # noqa: PLR0913
+    entries: Iterable[_Entry],
+    times: NDArray[np.float64],
+    shared_bounds: Sequence[float] | None,
+    time_axis: TimeAxis | None,
+    interpolation_strategy: Strategies | None,
+    grid_weights: Mapping[GridType, Sequence[float]] | None,
+) -> TimeseriesCollection:
+    """Build a collection from entries whose `values` are (region, time) on `times`."""
+    shared = _axis(times, shared_bounds, time_axis)
+    own_axes: dict[tuple[float, ...], tuple[TimeAxis, NDArray[np.intp]]] = {}
+    collection = TimeseriesCollection()
+    for entry in entries:
+        name = entry.name
+        grid = _pick_grid(name, entry.regions)
+        position = {region: i for i, region in enumerate(entry.regions)}
+        values = entry.values[[position[r] for r in REGIONS[grid]]]
+        axis = shared
+        if entry.bounds is not None and time_axis is None:
+            key = tuple(float(b) for b in entry.bounds)
+            if key not in own_axes:
+                own_axes[key] = _own_axis(name, key, times)
+            axis, columns = own_axes[key]
+            values = values[:, columns]
+        strategy = _strategy_for(name, interpolation_strategy)
+        if strategy is None:
+            strategy = _value_of(
+                entry.strategy or "linear", _STRATEGIES, "interpolation strategy"
+            )
+        weights = (grid_weights or {}).get(grid, entry.weights)
+        collection.add_timeseries(
+            name, _make(grid, values.T, axis, entry.unit, strategy, weights)
+        )
+    return collection
+
+
+def _own_axis(
+    name: str, bounds: tuple[float, ...], times: NDArray[np.float64]
+) -> tuple[TimeAxis, NDArray[np.intp]]:
+    starts = np.asarray(bounds[:-1], dtype=np.float64)
+    columns = np.searchsorted(times, starts)
+    if np.any(columns >= len(times)) or not np.array_equal(times[columns], starts):
+        msg = f"'{name}' has time bounds whose starts are not all time columns"
+        raise ValueError(msg)
+    return TimeAxis.from_bounds(np.asarray(bounds, dtype=np.float64)), columns
 
 
 def from_dataframe(
@@ -311,30 +442,42 @@ def from_dataframe(
     """
     attrs = df.attrs
     df = _wide(df)
-    axis = _axis(_times(df.columns), attrs, time_axis)
+    times = _times(df.columns)
+    values = df.to_numpy(dtype=np.float64)
     strategies = attrs.get("interpolation_strategy", {})
     weights = attrs.get("grid_weights", {})
-    collection = TimeseriesCollection()
-    for key, rows in df.groupby(level="variable", sort=False):
-        name = str(key)
-        units = rows.index.unique(level="unit")
-        if len(units) > 1:
-            msg = f"'{name}' has more than one unit: {list(units)}"
-            raise ValueError(msg)
-        by_region = rows.droplevel(["variable", "unit"])
-        grid = _pick_grid(name, list(by_region.index))
-        values = by_region.loc[list(REGIONS[grid])].to_numpy(dtype=np.float64).T
-        strategy = _strategy_for(name, interpolation_strategy)
-        if strategy is None:
-            strategy = _value_of(
-                strategies.get(name, "linear"), _STRATEGIES, "interpolation strategy"
+    bounds = attrs.get("time_bounds", [])
+    axis_index = attrs.get("time_axis_index")
+    shared_bounds = bounds[0] if axis_index is None and len(bounds) == 1 else None
+
+    positions: dict[str, list[int]] = {}
+    units: dict[str, set[str]] = {}
+    regions: dict[str, list[str]] = {}
+    for i, (variable, unit, region) in enumerate(df.index):
+        name = str(variable)
+        positions.setdefault(name, []).append(i)
+        units.setdefault(name, set()).add(str(unit))
+        regions.setdefault(name, []).append(str(region))
+
+    def entries() -> Iterator[_Entry]:
+        for name, rows in positions.items():
+            if len(units[name]) > 1:
+                msg = f"'{name}' has more than one unit: {sorted(units[name])}"
+                raise ValueError(msg)
+            index = None if axis_index is None else axis_index.get(name)
+            yield _Entry(
+                name,
+                next(iter(units[name])),
+                regions[name],
+                values[rows],
+                strategies.get(name),
+                weights.get(name),
+                None if index is None else bounds[index],
             )
-        grid_weight = (grid_weights or {}).get(grid, weights.get(name))
-        collection.add_timeseries(
-            name,
-            _make(grid, values, axis, str(units[0]), strategy, grid_weight),
-        )
-    return collection
+
+    return _read(
+        entries(), times, shared_bounds, time_axis, interpolation_strategy, grid_weights
+    )
 
 
 def _xarray() -> Any:
@@ -344,6 +487,9 @@ def _xarray() -> Any:
         msg = "xarray is not installed, install it with the rscm[xarray] extra"
         raise ImportError(msg) from error
     return xr
+
+
+_XARRAY_RESERVED = frozenset({"time", "region", "bound", "time_bounds"})
 
 
 def to_xarray(
@@ -358,38 +504,44 @@ def to_xarray(
     NaN in the regions of other grids.
     Its attributes hold its `unit`, `grid`, `interpolation_strategy`
     and any `grid_weights`.
-    A `time_bounds` coordinate holds the time axis when every series shares one.
+    A `time_bounds` coordinate holds the time axis when every series shares one,
+    and otherwise each variable has a `time_bounds` attribute.
 
     Raises
     ------
     ImportError
         If xarray is not installed.
+    ValueError
+        If a variable is named `time`, `region`, `bound` or `time_bounds`,
+        which the Dataset uses for its coordinates.
     """
     xr = _xarray()
-    df = to_dataframe(timeseries, global_mean=global_mean)
-    present = set(df.index.get_level_values("region"))
+    table = _table(timeseries, global_mean)
+    clashes = sorted(_XARRAY_RESERVED & set(table.rows))
+    if clashes:
+        msg = f"Variables {clashes} clash with the Dataset's coordinate names"
+        raise ValueError(msg)
+    present = set(table.regions)
     regions = [r for g in REGIONS.values() for r in g if r in present]
-    times = df.columns.to_numpy(dtype=np.float64)
+    column = {region: i for i, region in enumerate(regions)}
+    shared = len(table.bounds) == 1
     data_vars = {}
-    for key, rows in df.groupby(level="variable", sort=False):
-        name = str(key)
-        by_region = rows.droplevel(["variable", "unit"]).reindex(regions)
-        grid = _pick_grid(name, list(rows.index.get_level_values("region")))
+    for name, rows in table.rows.items():
+        data = np.full((len(table.times), len(regions)), np.nan)
+        data[:, [column[r] for r in table.regions[rows]]] = table.values[rows].T
         attrs: dict[str, Any] = {
-            "unit": str(rows.index.get_level_values("unit")[0]),
-            "grid": _name_of(grid, _GRID_NAMES),
-            "interpolation_strategy": df.attrs["interpolation_strategy"][name],
+            "unit": table.units[rows.start],
+            "grid": _name_of(table.grids[name], _GRID_NAMES),
+            "interpolation_strategy": table.strategies[name],
         }
-        if name in df.attrs["grid_weights"]:
-            attrs["grid_weights"] = df.attrs["grid_weights"][name]
-        data_vars[name] = xr.DataArray(
-            by_region.to_numpy(dtype=np.float64).T,
-            dims=("time", "region"),
-            attrs=attrs,
-        )
-    coords: dict[str, Any] = {"time": times, "region": regions}
-    if "time_bounds" in df.attrs:
-        bounds = np.asarray(df.attrs["time_bounds"])
+        if name in table.weights:
+            attrs["grid_weights"] = table.weights[name]
+        if not shared:
+            attrs["time_bounds"] = table.bounds[table.axis_index[name]]
+        data_vars[name] = (("time", "region"), data, attrs)
+    coords: dict[str, Any] = {"time": table.times, "region": regions}
+    if shared:
+        bounds = np.asarray(table.bounds[0])
         coords["time_bounds"] = (
             ("time", "bound"),
             np.column_stack([bounds[:-1], bounds[1:]]),
@@ -418,52 +570,43 @@ def from_xarray(
     ValueError
         As `from_dataframe` does, or if a data variable has no `unit` attribute.
     """
-    rows: list[tuple[str, str, str]] = []
-    values: list[NDArray[np.float64]] = []
-    strategies: dict[str, str] = {}
-    weights: dict[str, list[float]] = {}
-    for key, array in ds.data_vars.items():
-        name = str(key)
-        if "unit" not in array.attrs:
-            msg = f"'{name}' has no 'unit' attribute"
-            raise ValueError(msg)
-        unit = str(array.attrs["unit"])
-        if "region" not in array.dims:
-            rows.append((name, unit, "World"))
-            values.append(array.transpose("time").to_numpy())
-        else:
-            by_region = array.transpose("region", "time")
-            if "grid" in array.attrs:
-                keep = list(
-                    REGIONS[_value_of(array.attrs["grid"], _GRID_NAMES, "grid")]
-                )
-            else:
-                keep = [
-                    str(r)
-                    for r in by_region["region"].to_numpy()
-                    if not np.isnan(by_region.sel(region=r)).all()
-                ]
-            for region in keep:
-                rows.append((name, unit, region))
-                values.append(by_region.sel(region=region).to_numpy())
-        if "interpolation_strategy" in array.attrs:
-            strategies[name] = str(array.attrs["interpolation_strategy"])
-        if "grid_weights" in array.attrs:
-            weights[name] = [float(w) for w in array.attrs["grid_weights"]]
-    df = pd.DataFrame(
-        np.vstack(values) if values else None,
-        index=pd.MultiIndex.from_tuples(rows, names=INDEX),
-        columns=ds["time"].to_numpy(),
-    )
-    df.attrs = {"interpolation_strategy": strategies, "grid_weights": weights}
+    times = np.asarray(ds["time"].to_numpy(), dtype=np.float64)
+    shared_bounds = None
     if "time_bounds" in ds.coords:
-        bounds = ds["time_bounds"].to_numpy()
-        df.attrs["time_bounds"] = [*bounds[:, 0], bounds[-1, 1]]
-    return from_dataframe(
-        df,
-        time_axis=time_axis,
-        interpolation_strategy=interpolation_strategy,
-        grid_weights=grid_weights,
+        edges = ds["time_bounds"].to_numpy()
+        shared_bounds = [*edges[:, 0], edges[-1, 1]]
+    labels = [str(r) for r in ds["region"].to_numpy()] if "region" in ds.dims else []
+
+    def entries() -> Iterator[_Entry]:
+        for key, array in ds.data_vars.items():
+            name = str(key)
+            if "unit" not in array.attrs:
+                msg = f"'{name}' has no 'unit' attribute"
+                raise ValueError(msg)
+            if "region" not in array.dims:
+                regions = ["World"]
+                values = array.transpose("time").to_numpy()[np.newaxis, :]
+            else:
+                by_region = array.transpose("region", "time").to_numpy()
+                if "grid" in array.attrs:
+                    grid = _value_of(array.attrs["grid"], _GRID_NAMES, "grid")
+                    keep = [labels.index(r) for r in REGIONS[grid]]
+                else:
+                    keep = np.flatnonzero(~np.isnan(by_region).all(axis=1)).tolist()
+                regions = [labels[i] for i in keep]
+                values = by_region[keep]
+            yield _Entry(
+                name,
+                str(array.attrs["unit"]),
+                regions,
+                np.asarray(values, dtype=np.float64),
+                array.attrs.get("interpolation_strategy"),
+                array.attrs.get("grid_weights"),
+                array.attrs.get("time_bounds"),
+            )
+
+    return _read(
+        entries(), times, shared_bounds, time_axis, interpolation_strategy, grid_weights
     )
 
 
@@ -476,6 +619,8 @@ def to_inputs(
     Each series is interpolated with its strategy onto `time_axis`,
     with one value per step start, and four or two columns for a grid variable.
     A DataFrame is read with `from_dataframe` first.
+    The inputs keep only values and units,
+    so `from_inputs` takes the interpolation strategies and grid weights as arguments.
     """
     collection = (
         data if isinstance(data, TimeseriesCollection) else from_dataframe(data)
@@ -492,6 +637,7 @@ def from_inputs(
     time_axis: TimeAxis,
     *,
     interpolation_strategy: Strategies = InterpolationStrategy.Linear,
+    grid_weights: Mapping[GridType, Sequence[float]] | None = None,
 ) -> TimeseriesCollection:
     """
     Read `(values, unit)` inputs on `time_axis` into a collection.
@@ -500,6 +646,8 @@ def from_inputs(
     four columns for four-box and two for hemispheric.
     Values one step short, as FaIR's emissions are,
     hold their last value over the last step.
+    `interpolation_strategy` and `grid_weights` are as for `from_dataframe`,
+    defaulting to `Linear` and each grid's default weights.
     """
     collection = TimeseriesCollection()
     for name, (values, unit) in inputs.items():
@@ -514,7 +662,8 @@ def from_inputs(
         strategy = _strategy_for(name, interpolation_strategy)
         if strategy is None:
             strategy = InterpolationStrategy.Linear
+        weights = (grid_weights or {}).get(grid)
         collection.add_timeseries(
-            name, _make(grid, array, time_axis, unit, strategy, None)
+            name, _make(grid, array, time_axis, unit, strategy, weights)
         )
     return collection

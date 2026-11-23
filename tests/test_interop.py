@@ -67,6 +67,29 @@ def _collection() -> TimeseriesCollection:
     return c
 
 
+def _mixed_axes() -> TimeseriesCollection:
+    c = _collection()
+    c.add_timeseries(
+        "Same starts, longer last step",
+        Timeseries(
+            [1.0, np.nan, 3.0],
+            TimeAxis.from_bounds(np.array([2000.0, 2001.0, 2003.0, 2050.0])),
+            "K",
+            InterpolationStrategy.Linear,
+        ),
+    )
+    c.add_timeseries(
+        "Other starts",
+        HemisphericTimeseries(
+            np.array([[1.0, np.nan], [3.0, 4.0]]),
+            TimeAxis.from_bounds(np.array([2002.0, 2005.0, 2006.0])),
+            "K",
+            InterpolationStrategy.Previous,
+        ),
+    )
+    return c
+
+
 def assert_same(actual: AnySeries, expected: AnySeries) -> None:
     assert type(actual) is type(expected)
     npt.assert_array_equal(actual.values(), expected.values())
@@ -185,6 +208,13 @@ class TestDataFrame:
         with pytest.raises(ValueError, match="scenario"):
             interop.from_dataframe(df)
 
+    def test_round_trip_keeps_each_time_axis(self):
+        c = _mixed_axes()
+        df = c.to_dataframe()
+
+        npt.assert_array_equal(df.columns, [2000.0, 2001.0, 2002.0, 2003.0, 2005.0])
+        assert_same_collection(interop.from_dataframe(df), c)
+
     def test_a_mapping_of_series_converts(self):
         ts = Timeseries.from_values([1.0, 2.0, 3.0], AXIS, unit="K")
         df = interop.to_dataframe({"T": ts})
@@ -212,6 +242,19 @@ class TestXarray:
         assert_same_collection(
             TimeseriesCollection.from_xarray(c.to_xarray(global_mean=True)), c
         )
+
+    def test_round_trip_keeps_each_time_axis(self):
+        c = _mixed_axes()
+        ds = c.to_xarray()
+
+        assert "time_bounds" not in ds.coords
+        assert_same_collection(interop.from_xarray(ds), c)
+
+    @pytest.mark.parametrize("name", ["time", "region", "bound", "time_bounds"])
+    def test_rejects_a_variable_named_as_a_coordinate(self, name):
+        ts = Timeseries.from_values([1.0, 2.0, 3.0], AXIS, unit="K")
+        with pytest.raises(ValueError, match="clash"):
+            interop.to_xarray({name: ts})
 
     def test_matches_the_dataframe(self):
         c = _collection()
@@ -279,6 +322,19 @@ class TestInputs:
         for name, (values, unit) in inputs.items():
             npt.assert_array_equal(back[name][0], values)
             assert back[name][1] == unit
+
+    def test_round_trip_takes_strategies_and_weights(self):
+        c = _collection()
+        back = interop.from_inputs(
+            interop.to_inputs(c, AXIS),
+            AXIS,
+            interpolation_strategy={name: c[name].interpolation_strategy for name in c},
+            grid_weights={
+                GridType.FourBox: WEIGHTS,
+                GridType.Hemispheric: (0.6, 0.4),
+            },
+        )
+        assert_same_collection(back, c)
 
 
 def _two_layer_model(prescribed: TimeseriesCollection) -> Any:
