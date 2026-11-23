@@ -90,6 +90,16 @@ def _mixed_axes() -> TimeseriesCollection:
     return c
 
 
+def _one_step_series() -> TimeseriesCollection:
+    c = TimeseriesCollection()
+    for name, end in (("A", 2001.0), ("B", 2005.0)):
+        axis = TimeAxis.from_bounds(np.array([2000.0, end]))
+        c.add_timeseries(
+            name, Timeseries([1.0], axis, "K", InterpolationStrategy.Linear)
+        )
+    return c
+
+
 def assert_same(actual: AnySeries, expected: AnySeries) -> None:
     assert type(actual) is type(expected)
     npt.assert_array_equal(actual.values(), expected.values())
@@ -208,6 +218,10 @@ class TestDataFrame:
         with pytest.raises(ValueError, match="scenario"):
             interop.from_dataframe(df)
 
+    def test_round_trip_keeps_one_step_series_with_other_ends(self):
+        c = _one_step_series()
+        assert_same_collection(interop.from_dataframe(c.to_dataframe()), c)
+
     def test_round_trip_keeps_each_time_axis(self):
         c = _mixed_axes()
         df = c.to_dataframe()
@@ -249,6 +263,20 @@ class TestXarray:
 
         assert "time_bounds" not in ds.coords
         assert_same_collection(interop.from_xarray(ds), c)
+
+    def test_round_trip_keeps_one_step_series_with_other_ends(self):
+        c = _one_step_series()
+        assert_same_collection(interop.from_xarray(c.to_xarray()), c)
+
+    def test_rejects_datetime_times(self):
+        ds = self.xr.Dataset(
+            {"T": ("time", [1.0, 2.0], {"unit": "K"})},
+            coords={
+                "time": np.array(["2000-01-01", "2001-01-01"], dtype="datetime64[ns]")
+            },
+        )
+        with pytest.raises(TypeError, match="decimal years"):
+            interop.from_xarray(ds)
 
     @pytest.mark.parametrize("name", ["time", "region", "bound", "time_bounds"])
     def test_rejects_a_variable_named_as_a_coordinate(self, name):

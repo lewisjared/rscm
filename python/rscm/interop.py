@@ -367,7 +367,8 @@ def _read(  # noqa: PLR0913
     grid_weights: Mapping[GridType, Sequence[float]] | None,
 ) -> TimeseriesCollection:
     """Build a collection from entries whose `values` are (region, time) on `times`."""
-    shared = _axis(times, shared_bounds, time_axis)
+    # Built on first use: per-variable bounds may leave too few times to infer one.
+    shared = None if time_axis is None else _axis(times, shared_bounds, time_axis)
     own_axes: dict[tuple[float, ...], tuple[TimeAxis, NDArray[np.intp]]] = {}
     collection = TimeseriesCollection()
     for entry in entries:
@@ -375,13 +376,16 @@ def _read(  # noqa: PLR0913
         grid = _pick_grid(name, entry.regions)
         position = {region: i for i, region in enumerate(entry.regions)}
         values = entry.values[[position[r] for r in REGIONS[grid]]]
-        axis = shared
         if entry.bounds is not None and time_axis is None:
             key = tuple(float(b) for b in entry.bounds)
             if key not in own_axes:
                 own_axes[key] = _own_axis(name, key, times)
             axis, columns = own_axes[key]
             values = values[:, columns]
+        else:
+            if shared is None:
+                shared = _axis(times, shared_bounds, time_axis)
+            axis = shared
         strategy = _strategy_for(name, interpolation_strategy)
         if strategy is None:
             strategy = _value_of(
@@ -570,7 +574,7 @@ def from_xarray(
     ValueError
         As `from_dataframe` does, or if a data variable has no `unit` attribute.
     """
-    times = np.asarray(ds["time"].to_numpy(), dtype=np.float64)
+    times = _times(ds.get_index("time"))
     shared_bounds = None
     if "time_bounds" in ds.coords:
         edges = ds["time_bounds"].to_numpy()
