@@ -54,15 +54,13 @@
 //! - `Nitrogen Flux|{Uptake,Recycling,Losses}` (Gt N/yr), only with the `nitrogen` parameter
 
 use crate::bounds::Bounded;
-use rscm_core::names::{
-    child, EMISSIONS_NH3, EMISSIONS_NOX, NITROGEN_FLUX_DEPOSITION, NITROGEN_FLUX_FIXATION,
-};
+use rscm_core::names::{NITROGEN_FLUX_DEPOSITION, NITROGEN_FLUX_FIXATION};
 use std::any::Any;
 
 use super::nitrogen::{NitrogenBudget, NitrogenDrivers, NitrogenState};
 use crate::parameters::TerrestrialCarbonParameters;
 use crate::reference::feedback_warming;
-use crate::EMISSION_SECTORS;
+use crate::{NH3_SECTORS, NOX_SECTORS};
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputBuffer, OutputState, OutputWriter,
     TimeseriesType, VariableDefinition, VariableRole,
@@ -742,12 +740,10 @@ impl TerrestrialCarbon {
             Some(n) => (
                 match &n.deposition_from_emissions {
                     Some(d) => {
-                        let sectors = |gas: &str| {
-                            EMISSION_SECTORS.map(|sector| {
-                                input_state.get_scalar_window(&child(gas, sector)).get()
-                            })
+                        let sectors = |names: [&str; 2]| {
+                            names.map(|name| input_state.get_scalar_window(name).get())
                         };
-                        d.deposition(sectors(EMISSIONS_NOX), sectors(EMISSIONS_NH3))
+                        d.deposition(sectors(NOX_SECTORS), sectors(NH3_SECTORS))
                     }
                     None => input_state
                         .get_scalar_window(NITROGEN_FLUX_DEPOSITION)
@@ -850,13 +846,8 @@ impl Component for TerrestrialCarbon {
         let mut definitions = Self::generated_definitions();
         if let Some(n) = &self.parameters.nitrogen {
             if n.deposition_from_emissions.is_some() {
-                for gas in [EMISSIONS_NOX, EMISSIONS_NH3] {
-                    for sector in EMISSION_SECTORS {
-                        definitions.push(VariableDefinition::scalar_input(
-                            &child(gas, sector),
-                            "Mt N/yr",
-                        ));
-                    }
+                for name in NOX_SECTORS.into_iter().chain(NH3_SECTORS) {
+                    definitions.push(VariableDefinition::scalar_input(name, "Mt N/yr"));
                 }
             } else {
                 definitions.push(VariableDefinition::scalar_input(
