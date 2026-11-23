@@ -25,5 +25,8 @@ pub mod parameters;
 pub mod python;
 mod reference;
 
+/// Sectors of the emissions that components read by sector.
+pub(crate) const EMISSION_SECTORS: [&str; 2] = ["Fossil", "Biosphere"];
+
 #[cfg(test)]
 mod component_names;

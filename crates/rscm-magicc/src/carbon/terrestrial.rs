@@ -62,6 +62,7 @@ use std::any::Any;
 use super::nitrogen::{NitrogenBudget, NitrogenDrivers, NitrogenState};
 use crate::parameters::TerrestrialCarbonParameters;
 use crate::reference::feedback_warming;
+use crate::EMISSION_SECTORS;
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputBuffer, OutputState, OutputWriter,
     TimeseriesType, VariableDefinition, VariableRole,
@@ -742,7 +743,7 @@ impl TerrestrialCarbon {
                 match &n.deposition_from_emissions {
                     Some(d) => {
                         let sectors = |gas: &str| {
-                            DEPOSITION_SECTORS.map(|sector| {
+                            EMISSION_SECTORS.map(|sector| {
                                 input_state.get_scalar_window(&child(gas, sector)).get()
                             })
                         };
@@ -813,9 +814,6 @@ impl TerrestrialCarbon {
     }
 }
 
-/// Sectors of the NOx and NH3 emissions that deposit nitrogen.
-const DEPOSITION_SECTORS: [&str; 2] = ["Fossil", "Biosphere"];
-
 const NITROGEN_OUTPUTS: [(&str, &str, TimeseriesType); 5] = [
     // The factor applied over a step, which MAGICC7 labels by the step's start
     ("Nitrogen Limitation Factor", "1", TimeseriesType::Average),
@@ -853,7 +851,7 @@ impl Component for TerrestrialCarbon {
         if let Some(n) = &self.parameters.nitrogen {
             if n.deposition_from_emissions.is_some() {
                 for gas in [EMISSIONS_NOX, EMISSIONS_NH3] {
-                    for sector in DEPOSITION_SECTORS {
+                    for sector in EMISSION_SECTORS {
                         definitions.push(VariableDefinition::scalar_input(
                             &child(gas, sector),
                             "Mt N/yr",

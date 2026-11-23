@@ -38,6 +38,7 @@
 use crate::bounds::Bounded;
 use crate::parameters::OzoneForcingParameters;
 use crate::reference::{first_value, require_annual, value_at_year};
+use crate::EMISSION_SECTORS;
 use rscm_core::component::{
     Component, ComponentState, InputState, OutputWriter, VariableDefinition,
 };
@@ -58,7 +59,6 @@ const PRECURSORS: [(&str, &str); 3] = [
     ("CO", "Mt CO/yr"),
     ("NMVOC", "Mt NMVOC/yr"),
 ];
-const SECTORS: [&str; 2] = ["Fossil", "Biosphere"];
 
 fn precursor_name(gas: &str, sector: &str) -> String {
     child(&child(EMISSIONS, gas), sector)
@@ -128,7 +128,7 @@ impl Component for OzoneForcing {
             VariableDefinition::scalar_input(ATMOSPHERIC_CONCENTRATIONS_N2O, "ppb"),
         ];
         for (gas, unit) in PRECURSORS {
-            for sector in SECTORS {
+            for sector in EMISSION_SECTORS {
                 definitions.push(VariableDefinition::scalar_input(
                     &precursor_name(gas, sector),
                     unit,
@@ -171,8 +171,8 @@ impl Component for OzoneForcing {
 
         let ch4 = window(ATMOSPHERIC_CONCENTRATIONS_CH4);
         let change = |gas: &str| {
-            let [fossil, biosphere] =
-                SECTORS.map(|sector| input_state.get_scalar_window(&precursor_name(gas, sector)));
+            let [fossil, biosphere] = EMISSION_SECTORS
+                .map(|sector| input_state.get_scalar_window(&precursor_name(gas, sector)));
             (fossil.get() - first_value(&fossil)) + (biosphere.get() - first_value(&biosphere))
         };
         let trop = self.trop_forcing(
