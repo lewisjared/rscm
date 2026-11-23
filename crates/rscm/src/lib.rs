@@ -9,13 +9,16 @@
 //! The extension module is named `_lib` and is typically accessed through the `rscm`
 //! Python package. The module hierarchy exposed to Python is:
 //!
-//! - `rscm._lib` - Root extension module
-//!   - `rscm._lib.core` - Core abstractions (Model, Component, Timeseries, etc.)
-//!     - `rscm._lib.core.spatial` - Spatial grid types (FourBox, Hemispheric)
-//!     - `rscm._lib.core.state` - State value types (StateValue, FourBoxSlice, etc.)
-//!   - `rscm._lib.components` - Generic climate model components (CarbonCycle, CO2ERF, etc.)
-//!   - `rscm._lib.two_layer` - Two-layer energy balance model
-//!   - `rscm._lib.magicc` - MAGICC component implementations (scaffold)
+//! - `rscm._lib`: root extension module
+//!   - `rscm._lib.core`: core abstractions (Model, Component, Timeseries, etc.)
+//!     - `rscm._lib.core.names`: shared variable names
+//!     - `rscm._lib.core.spatial`: spatial grid types (FourBox, Hemispheric)
+//!     - `rscm._lib.core.state`: state value types (StateValue, FourBoxSlice, etc.)
+//!   - `rscm._lib.components`: generic climate model components (CarbonCycle, CO2ERF, etc.)
+//!   - `rscm._lib.two_layer`: two-layer energy balance model
+//!   - `rscm._lib.magicc`: MAGICC7 components
+//!   - `rscm._lib.fair`: FaIR components
+//!   - `rscm._lib.calibrate`: parameter calibration (priors, likelihoods, MCMC)
 //!
 //! # Usage from Python
 //!
@@ -49,10 +52,12 @@
 //!
 //! This crate re-exports Python bindings from the other workspace crates:
 //!
-//! - [`rscm_core`] - Core traits and abstractions
-//! - [`rscm_components`] - Generic climate components
-//! - [`rscm_two_layer`] - Two-layer model
-//! - [`rscm_magicc`] - MAGICC components (future)
+//! - Core traits and abstractions from [`rscm_core`].
+//! - Generic climate components from [`rscm_components`].
+//! - The two-layer model from [`rscm_two_layer`].
+//! - MAGICC7 components from [`rscm_magicc`].
+//! - FaIR components from [`rscm_fair`].
+//! - Calibration from [`rscm_calibrate`].
 //!
 //! The [`python`] module contains the PyO3 module registration that wires everything together.
 

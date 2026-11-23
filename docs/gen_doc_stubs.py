@@ -25,6 +25,8 @@ import mkdocs_gen_files
 from attrs import define
 
 ROOT_DIR = Path("api")
+# NAVIGATION.md links "Python API" to api/rscm/, so literate-nav reads the nav there.
+NAV_DIR = ROOT_DIR / "rscm"
 nav = mkdocs_gen_files.Nav()
 
 # Packages documented by their public re-exports, so their plain modules get no page.
@@ -149,18 +151,19 @@ def write_module_page(
     Write the docs pages for a module/package
     """
     package = importlib.import_module(package_full_name)
+    package_name = package_full_name.rsplit(".", maxsplit=1)[-1]
+    write_file = get_write_file(package_full_name)
+
+    nav_key = [
+        part.replace("_", " ").capitalize() for part in package_full_name.split(".")[1:]
+    ] or [package_full_name]
+    nav[nav_key] = write_file.relative_to(NAV_DIR).as_posix()
 
     if hasattr(package, "__path__"):
         sub_packages = write_subpackage_pages(package)
 
     else:
         sub_packages = None
-
-    package_name = package_full_name.rsplit(".", maxsplit=1)[-1]
-
-    write_file = get_write_file(package_full_name)
-
-    nav[package_full_name.split(".")] = write_file.relative_to(ROOT_DIR).as_posix()
 
     with mkdocs_gen_files.open(write_file, "w") as fh:
         fh.write(f"::: {package_full_name}\n")
@@ -682,10 +685,14 @@ def extract_io_sections(
     extras: dict[str, list[str]] = {}
     section = None
     bullets: list[list[str]] = []
+    references = {
+        m.group(1) for line in lines if (m := REFERENCE_DEFINITION.match(line))
+    }
 
     def flush() -> None:
         for bullet in bullets:
             text = " ".join(part.strip() for part in bullet)
+            text = rewrite_intra_doc_links(text, references)
             names, note = parse_io_bullet(text)
             matched = [n for n in names if n in known]
             if matched and len(matched) == len(names):
@@ -1011,5 +1018,7 @@ write_module_page("rscm")
 write_component_docs()
 
 # Render navigation
-with mkdocs_gen_files.open(ROOT_DIR / "NAVIGATION.md", "w") as fh:
-    fh.writelines(nav.build_literate_nav(indentation=2))
+with mkdocs_gen_files.open(NAV_DIR / "NAVIGATION.md", "w") as fh:
+    # Nested by two spaces to match literate-nav's tab_length in mkdocs.yml.
+    for item in nav.items():
+        fh.write(f"{'  ' * item.level}* [{item.title}]({item.filename})\n")

@@ -79,11 +79,11 @@ heat_capacity_deep = 100.0    # Deep ocean (W yr/(m² K))
 | `components` | Component definitions and parameters |
 | `inputs` | Constant inputs, as a `value` and `unit` |
 | `initial_values` | Initial values for state variables |
-| `outputs` | Output specifications |
+| `outputs` | Accepted, but nothing reads it |
 
 The shipped configs record their schema version as `config_schema` under `[model]`,
 and `ModelConfig` has a matching `config_schema` field.
-Unknown top-level keys are logged as a warning and ignored.
+`load_config` logs a warning for unknown top-level keys, and `build_model` ignores them.
 `build_model` raises `ValidationError` for unknown keys in `[time]`, `[components]` and `[inputs]`,
 and for a registered `[components.climate]` type other than `TwoLayer`.
 An unregistered type raises `ComponentNotFoundError`.
