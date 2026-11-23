@@ -105,8 +105,8 @@ See the [Python API](api/rscm/index.md) for full class documentation.
 **Learn to** run climate scenarios from a common historical baseline.
 
 - Run a historical period with observed emissions
-- Extract state at a branch point (e.g. 2015) to initialise scenario runs
-- Run several SSP-like pathways from that point
+- Record the model at a branch point (e.g. 2015) with `Model.checkpoint()`
+- Branch several SSP-like pathways from that record with `Model.branch()`
 - Compare and export the results with `pandas`
 
 [**Start Tutorial: Building a Complete Scenario Pipeline**](notebooks/scenario_pipeline.py)

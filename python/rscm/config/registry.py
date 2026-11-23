@@ -9,11 +9,11 @@ Examples
 >>> from rscm.config.registry import component_registry, register_component
 >>>
 >>> @register_component("MyComponent")
->>> class MyComponentBuilder:
+... class MyComponentBuilder:
 ...     pass
 >>>
->>> component_registry.get("MyComponent")
-<class 'MyComponentBuilder'>
+>>> component_registry.get("MyComponent") is MyComponentBuilder
+True
 """
 
 from __future__ import annotations
@@ -38,10 +38,11 @@ class ComponentRegistry:
 
     Examples
     --------
+    >>> from rscm.two_layer import TwoLayerBuilder
     >>> registry = ComponentRegistry()
     >>> registry.register("TwoLayer", TwoLayerBuilder)
-    >>> registry.get("TwoLayer")
-    <class 'TwoLayerBuilder'>
+    >>> registry.get("TwoLayer") is TwoLayerBuilder
+    True
     """
 
     def __init__(self) -> None:
@@ -143,7 +144,7 @@ def register_component(
     Examples
     --------
     >>> @register_component("TwoLayer")
-    >>> class TwoLayerBuilder:
+    ... class TwoLayerBuilder:
     ...     pass
     """
 
