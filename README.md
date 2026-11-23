@@ -26,9 +26,11 @@ It is also a testbed for modularising MAGICC and reimplementing it in Rust.
 * Emissions-driven and concentration-driven MAGICC models (`rscm.magicc.emissions_driven`,
   `rscm.magicc.concentration_driven`),
   with `rscm.magicc.full.from_magicc7` to translate MAGICC7's configuration.
-  They match MAGICC7 v7.5.3 on its SSP245 runs.
+  They match MAGICC7 v7.5.3 on its SSP245 runs and on every member of its AR6 probabilistic ensemble.
 * A port of FaIR v2.2.5 (`rscm.fair`), with ensemble runs and conversion from a configured `fair.FAIR`.
 * Model specs and setups (`rscm.spec`) to inspect, compare and run many models in parallel.
+* Run records (`Model.checkpoint`, `Model.restore`, `Model.branch`) to resume a run or branch from it.
+* Input validation (`rscm.validation`) that reports every problem in a run's inputs before it starts.
 * TOML model configuration (`rscm.config`) and shared variable names (`rscm.names`).
 * MCMC calibration and point estimation (`rscm.calibrate`).
 

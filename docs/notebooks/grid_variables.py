@@ -307,7 +307,7 @@ hemi_temps = [1.6, 0.9]
 print(f"Global mean: {hemi_grid.aggregate_global(hemi_temps)} K")
 
 # %% [markdown]
-# A model aggregates four-box values to Hemispheric by averaging ocean and land in each hemisphere.
+# A model aggregates four-box values to Hemispheric by a weighted average of ocean and land in each hemisphere.
 # The [example below](#aggregating-inside-a-model) shows this.
 
 # %% [markdown]
@@ -473,9 +473,8 @@ hemi_values = (
 print(f"[N, S] for 2001 to 2003:\n{np.round(hemi_values[1:4], 3)}")
 
 # %% [markdown]
-# Rust components also support read-side aggregation,
-# where a component reads a coarser grid than the schema stores.
-# Python components receive the window at the schema's resolution.
+# A component can also read a coarser grid than the one a variable is stored on.
+# The model then aggregates the value as the component reads it.
 # See [Schema-Driven Auto-Aggregation](../../grids/#schema-driven-auto-aggregation) for details.
 
 # %% [markdown]
@@ -492,9 +491,9 @@ print(f"[N, S] for 2001 to 2003:\n{np.round(hemi_values[1:4], 3)}")
 # | Scalar → Hemispheric  | Broadcast              | No         |
 # | Hemispheric → FourBox | Disaggregation         | No         |
 #
-# Automatic aggregation needs a schema that declares the coarser grid.
-# The builder validates grids when the model is built.
-# Without a schema, a four-box producer cannot feed a Scalar consumer:
+# The builder validates grids when the model is built, with or without a schema.
+# Without one, a variable is stored on its producer's grid,
+# so a four-box producer can feed a Scalar consumer, which reads the global mean:
 
 
 # %%
@@ -509,21 +508,20 @@ class ScalarReader(Component):
         return self.Outputs(response=inputs.temperature.get())
 
 
-try:
-    (
-        ModelBuilder()
-        .with_time_axis(grid_time_axis)
-        .with_component(RegionalWarming(sensitivity))
-        .with_component(ScalarReader())
-        .with_prescribed_variable("Effective Radiative Forcing", grid_forcing)
-    ).build()
-except ValueError as e:
-    print(e)
+read_model = (
+    ModelBuilder()
+    .with_time_axis(grid_time_axis)
+    .with_component(RegionalWarming(sensitivity))
+    .with_component(ScalarReader())
+    .with_prescribed_variable("Effective Radiative Forcing", grid_forcing)
+).build()
+print(read_model.coupling("plain"))
 
 
 # %% [markdown]
-# Disaggregation is rejected even with a schema,
+# Disaggregation is rejected,
 # because there is no physical basis to split coarse values into finer regions without extra assumptions.
+# Here the schema stores the variable on the four-box grid, but its producer writes it per hemisphere.
 
 
 # %%

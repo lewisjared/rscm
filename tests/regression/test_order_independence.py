@@ -21,16 +21,7 @@ from rscm.names import (
 
 def _outputs(model):
     ts = model.timeseries()
-    out = {}
-    getters = (
-        ts.get_timeseries_by_name,
-        ts.get_four_box_timeseries_by_name,
-        ts.get_hemispheric_timeseries_by_name,
-    )
-    for name in ts.names():
-        series = next(s for s in (get(name) for get in getters) if s is not None)
-        out[name] = np.asarray(series.values())
-    return out
+    return {name: np.asarray(ts[name].values()) for name in ts}
 
 
 def _assert_identical(actual, expected):

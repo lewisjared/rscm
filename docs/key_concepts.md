@@ -587,10 +587,25 @@ collection = TimeseriesCollection()
 collection.add_timeseries("Emissions|CO2", emissions_ts)
 collection.add_timeseries("Surface Air Temperature Change", temp_ts)
 
-# Access by name
-ts = collection.get_timeseries_by_name("Emissions|CO2")
+# Access by name, on any grid
+ts = collection["Emissions|CO2"]
 print(ts.values())
+
+# Iterate over every name, scalar and grid alike
+for name in collection:
+    print(name, collection[name].unit)
 ```
+
+`get_timeseries_by_name`, `get_four_box_timeseries_by_name` and `get_hemispheric_timeseries_by_name`
+return `None` for a missing name and raise `TypeError` for a variable on another grid.
+`timeseries()` returns only the scalar series, so it does not line up with `names()`.
+
+A grid series' `global_mean()` returns its mean over the regions as a scalar `Timeseries`,
+weighted by the grid weights of the model that produced it.
+
+`collection.to_dataframe()` and `collection.to_xarray()` convert every series, on every grid,
+to pandas or xarray, and `TimeseriesCollection.from_dataframe(df)` reads them back.
+[Pandas and xarray](interop.md) describes the layout and how to feed a DataFrame in as prescribed data.
 
 ### Variable Names
 

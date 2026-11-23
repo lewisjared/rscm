@@ -34,7 +34,7 @@ impl From<HemisphericRegion> for usize {
 ///
 /// let grid = HemisphericGrid::equal_weights();
 /// assert_eq!(grid.size(), 2);
-/// assert_eq!(grid.region_names()[0], "Northern Hemisphere");
+/// assert_eq!(grid.region_names()[0], "World|Northern Hemisphere");
 ///
 /// // Aggregate to global
 /// let hemispheric = vec![15.0, 10.0]; // degC
@@ -100,8 +100,8 @@ impl SpatialGrid for HemisphericGrid {
         static NAMES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
         NAMES.get_or_init(|| {
             vec![
-                "Northern Hemisphere".to_string(),
-                "Southern Hemisphere".to_string(),
+                "World|Northern Hemisphere".to_string(),
+                "World|Southern Hemisphere".to_string(),
             ]
         })
     }

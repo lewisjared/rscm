@@ -1649,15 +1649,8 @@ def _pre_run_fgas(
 
 
 def _second_year(model: Model, name: str) -> list[float]:
-    ts = model.timeseries()
-    boxes = ts.get_four_box_timeseries_by_name(name)
-    if boxes is not None:
-        return [float(v) for v in boxes.values()[1]]
-    scalar = ts.get_timeseries_by_name(name)
-    if scalar is None:
-        msg = f"missing {name}"
-        raise KeyError(msg)
-    return [float(scalar.values()[1])]
+    values = np.asarray(model.timeseries()[name].values())
+    return [float(v) for v in np.atleast_1d(values[1])]
 
 
 def from_magicc7(  # noqa: PLR0913

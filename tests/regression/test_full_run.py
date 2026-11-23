@@ -23,8 +23,8 @@ from rscm._lib.magicc import (
     PermafrostBuilder,
 )
 from rscm.core import VariableRole
+from rscm.interop import from_inputs
 from rscm.magicc import emissions_driven, full
-from rscm.magicc import model as magicc_model
 from rscm.magicc import prescribed as pr
 from rscm.names import (
     EFFICACY_ADJUSTED_ERF,
@@ -274,13 +274,7 @@ def test_permafrost():
 
 def _all_outputs(model):
     ts = model.timeseries()
-    getters = (ts.get_timeseries_by_name, ts.get_four_box_timeseries_by_name)
-    return {
-        name: next(s for s in (get(name) for get in getters) if s is not None)
-        .values()
-        .copy()
-        for name in ts.names()
-    }
+    return {name: ts[name].values().copy() for name in ts}
 
 
 WRITES = (VariableRole.Output, VariableRole.State)
@@ -308,11 +302,15 @@ def _prescribing(setup, modelled, variable):
         if d.role == VariableRole.Input
     }
     axis = setup.time_axis
-    replaced = {
-        name: magicc_model._timeseries(outputs[name][: len(axis)], axis, d.unit)
-        for name, d in written.items()
-        if name in read
-    }
+    series = from_inputs(
+        {
+            name: (outputs[name][: len(axis)], d.unit)
+            for name, d in written.items()
+            if name in read
+        },
+        axis,
+    )
+    replaced = {name: series[name] for name in series}
     assert variable in replaced
     spec = dataclasses.replace(
         setup.spec,

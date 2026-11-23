@@ -1,8 +1,10 @@
+use crate::component::GridType;
 use crate::errors::{close_matches, format_close_matches};
 use crate::python::timeseries::{PyFourBoxTimeseries, PyHemisphericTimeseries, PyTimeseries};
 use crate::timeseries_collection::{TimeseriesCollection, TimeseriesData};
 use pyo3::exceptions::{PyKeyError, PyTypeError, PyValueError};
 pub use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyList};
 
 /// Extract a `Timeseries`, `FourBoxTimeseries` or `HemisphericTimeseries` given for `name`.
 pub fn extract_timeseries_data(
@@ -27,6 +29,31 @@ pub fn extract_timeseries_data(
 #[pyo3(name = "TimeseriesCollection")]
 #[derive(Clone)]
 pub struct PyTimeseriesCollection(pub TimeseriesCollection);
+
+impl PyTimeseriesCollection {
+    /// The data named `name`, or a TypeError naming its grid when it is not on `grid`.
+    fn on_grid(&self, name: &str, grid: GridType) -> PyResult<Option<&TimeseriesData>> {
+        match self.0.get_data(name) {
+            Some(data) if data.grid() != grid => Err(PyTypeError::new_err(format!(
+                "'{name}' is on the {} grid, not {grid}. Index the collection to get it on any grid",
+                data.grid()
+            ))),
+            data => Ok(data),
+        }
+    }
+}
+
+/// Call `rscm.interop.<function>` with `arg` and `kwargs`.
+fn interop<'py>(
+    function: &str,
+    arg: Bound<'py, PyAny>,
+    kwargs: Option<&Bound<'py, PyDict>>,
+) -> PyResult<Bound<'py, PyAny>> {
+    arg.py()
+        .import("rscm.interop")?
+        .getattr(function)?
+        .call((arg,), kwargs)
+}
 
 #[pymethods]
 impl PyTimeseriesCollection {
@@ -81,37 +108,85 @@ impl PyTimeseriesCollection {
         self.0.iter().count()
     }
 
+    /// Iterate over the names of the timeseries on every grid.
+    fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        PyList::new(py, self.names())?
+            .try_iter()
+            .map(Bound::into_any)
+    }
+
+    /// A wide DataFrame of every timeseries, see `rscm.interop.to_dataframe`.
+    #[pyo3(signature = (**kwargs))]
+    fn to_dataframe<'py>(
+        slf: Bound<'py, Self>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        interop("to_dataframe", slf.into_any(), kwargs)
+    }
+
+    /// An xarray Dataset of every timeseries, see `rscm.interop.to_xarray`.
+    #[pyo3(signature = (**kwargs))]
+    fn to_xarray<'py>(
+        slf: Bound<'py, Self>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        interop("to_xarray", slf.into_any(), kwargs)
+    }
+
+    /// A collection from a wide DataFrame, see `rscm.interop.from_dataframe`.
+    #[staticmethod]
+    #[pyo3(signature = (df, **kwargs))]
+    fn from_dataframe<'py>(
+        df: Bound<'py, PyAny>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        interop("from_dataframe", df, kwargs)
+    }
+
+    /// A collection from an xarray Dataset, see `rscm.interop.from_xarray`.
+    #[staticmethod]
+    #[pyo3(signature = (ds, **kwargs))]
+    fn from_xarray<'py>(
+        ds: Bound<'py, PyAny>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        interop("from_xarray", ds, kwargs)
+    }
+
     /// Get a scalar timeseries by name
     ///
-    /// Returns None if the timeseries is not found or is not a scalar timeseries.
-    pub fn get_timeseries_by_name(&self, name: &str) -> Option<PyTimeseries> {
-        self.0
-            .get_data(name)
+    /// Returns None if there is no timeseries by that name, and raises TypeError if it is on another grid.
+    pub fn get_timeseries_by_name(&self, name: &str) -> PyResult<Option<PyTimeseries>> {
+        Ok(self
+            .on_grid(name, GridType::Scalar)?
             .and_then(|data| data.as_scalar())
-            .map(|ts| PyTimeseries(ts.clone()))
+            .map(|ts| PyTimeseries(ts.clone())))
     }
 
     /// Get a four-box grid timeseries by name
     ///
-    /// Returns None if the timeseries is not found or is not a four-box timeseries.
-    pub fn get_four_box_timeseries_by_name(&self, name: &str) -> Option<PyFourBoxTimeseries> {
-        self.0
-            .get_data(name)
+    /// Returns None if there is no timeseries by that name, and raises TypeError if it is on another grid.
+    pub fn get_four_box_timeseries_by_name(
+        &self,
+        name: &str,
+    ) -> PyResult<Option<PyFourBoxTimeseries>> {
+        Ok(self
+            .on_grid(name, GridType::FourBox)?
             .and_then(|data| data.as_four_box())
-            .map(|ts| PyFourBoxTimeseries(ts.clone()))
+            .map(|ts| PyFourBoxTimeseries(ts.clone())))
     }
 
     /// Get a Hemispheric grid timeseries by name
     ///
-    /// Returns None if the timeseries is not found or is not a Hemispheric timeseries.
+    /// Returns None if there is no timeseries by that name, and raises TypeError if it is on another grid.
     pub fn get_hemispheric_timeseries_by_name(
         &self,
         name: &str,
-    ) -> Option<PyHemisphericTimeseries> {
-        self.0
-            .get_data(name)
+    ) -> PyResult<Option<PyHemisphericTimeseries>> {
+        Ok(self
+            .on_grid(name, GridType::Hemispheric)?
             .and_then(|data| data.as_hemispheric())
-            .map(|ts| PyHemisphericTimeseries(ts.clone()))
+            .map(|ts| PyHemisphericTimeseries(ts.clone())))
     }
 
     pub fn names(&self) -> Vec<String> {

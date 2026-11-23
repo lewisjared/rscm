@@ -25,7 +25,7 @@ The [module specifications](modules/README.md) describe each MAGICC7 module and 
 ```python
 import numpy as np
 from rscm.core import TimeAxis
-from rscm.magicc import emissions_driven, full, prescribed
+from rscm.magicc import emissions_driven, full
 
 years = np.arange(1750.0, 2101.0)
 time_axis = TimeAxis.from_values(years)
@@ -43,10 +43,14 @@ config, inputs = full.from_magicc7(
 )
 model = emissions_driven.setup_model(config, inputs, time_axis).run()
 timeseries = model.timeseries()
-co2 = timeseries.get_timeseries_by_name("Atmospheric Concentrations|CO2").values()
-boxes = timeseries.get_four_box_timeseries_by_name("Surface Air Temperature Change").values()
-temperature = boxes @ prescribed.area_fractions()
+co2 = timeseries["Atmospheric Concentrations|CO2"].values()
+temperature = timeseries["Surface Air Temperature Change"].global_mean().values()
+results = timeseries.to_dataframe(global_mean=True)
 ```
+
+`global_mean()` weights the four boxes by the model's grid weights, `prescribed.area_fractions()`.
+`to_dataframe` holds every variable, with a `World` row for each four-box variable,
+see [Pandas and xarray](interop.md).
 
 The time axis must have annual steps on whole years and start in 1750, MAGICC7's preindustrial reference year.
 RSCM measures forcing from the first year's concentrations,
@@ -324,9 +328,10 @@ config, inputs = full.from_magicc7(time_axis, emissions, bugs=())  # fix them al
 config, inputs = full.from_magicc7(time_axis, emissions, bugs=["unset_lamcalc_error"])
 ```
 
-Each sets an `include_*` parameter of the component it affects,
+The LAMCALC and Antarctic bugs set an `include_*` parameter of the component they affect,
 `ClimateUDEB` and `ForcingAggregation` for LAMCALC and `SeaLevelRise` for Antarctic discharge.
 The components default to reproducing them too.
+The NH3 bug changes the deposition input that `from_magicc7` builds.
 
 ## Agreement with MAGICC7
 

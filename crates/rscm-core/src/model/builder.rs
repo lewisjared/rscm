@@ -926,7 +926,8 @@ impl ModelBuilder {
                             storage_unit,
                             &time_axis,
                             &mut warnings,
-                        )?;
+                        )?
+                        .with_grid(self.create_four_box_grid());
                         collection.add_four_box_timeseries(name, ts);
                     } else {
                         let mut ts = GridTimeseries::new_empty(
@@ -949,7 +950,8 @@ impl ModelBuilder {
                             storage_unit,
                             &time_axis,
                             &mut warnings,
-                        )?;
+                        )?
+                        .with_grid(self.create_hemispheric_grid());
                         collection.add_hemispheric_timeseries(name, ts);
                     } else {
                         let mut ts = GridTimeseries::new_empty(

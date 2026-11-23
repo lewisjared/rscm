@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -2736,6 +2736,9 @@ fair = [
     { name = "fair" },
     { name = "xarray" },
 ]
+xarray = [
+    { name = "xarray" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -2783,8 +2786,9 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.3" },
     { name = "pandas", specifier = ">=2.3" },
     { name = "xarray", marker = "extra == 'fair'" },
+    { name = "xarray", marker = "extra == 'xarray'" },
 ]
-provides-extras = ["fair"]
+provides-extras = ["fair", "xarray"]
 
 [package.metadata.requires-dev]
 dev = [

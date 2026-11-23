@@ -122,3 +122,41 @@ fn test_grid_weights_serialisation_roundtrip() {
         Some(&custom_weights)
     );
 }
+
+#[test]
+fn test_prescribed_grid_series_take_the_model_weights() {
+    use crate::interpolate::strategies::{InterpolationStrategy, LinearSplineStrategy};
+    use crate::spatial::FourBoxGrid;
+    use crate::timeseries::GridTimeseries;
+    use crate::timeseries_collection::TimeseriesCollection;
+    use numpy::ndarray::Array2;
+
+    let custom_weights = vec![0.36, 0.14, 0.36, 0.14];
+    let time_axis = Arc::new(TimeAxis::from_values(Array::range(2020.0, 2025.0, 1.0)));
+    let mut prescribed = TimeseriesCollection::new();
+    prescribed.add_four_box_timeseries(
+        "Temperature".to_string(),
+        GridTimeseries::new(
+            Array2::ones((5, 4)),
+            time_axis.clone(),
+            FourBoxGrid::magicc_standard(),
+            "K".to_string(),
+            InterpolationStrategy::from(LinearSplineStrategy::new(true)),
+        ),
+    );
+    let schema = VariableSchema::new().variable_with_grid("Temperature", "K", GridType::FourBox);
+
+    let model = builder()
+        .with_time_axis((*time_axis).clone())
+        .with_schema(schema)
+        .with_prescribed_collection(prescribed)
+        .with_grid_weights(GridType::FourBox, custom_weights.clone())
+        .build()
+        .unwrap();
+
+    let stored = model.timeseries().get_data("Temperature").unwrap();
+    assert_eq!(
+        stored.as_four_box().unwrap().grid().weights().to_vec(),
+        custom_weights
+    );
+}

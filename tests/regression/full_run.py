@@ -22,7 +22,8 @@ import numpy.testing as npt
 import pandas as pd
 import pytest
 
-from rscm.core import TimeAxis
+from rscm.core import GridType, TimeAxis
+from rscm.interop import REGIONS
 from rscm.magicc import (
     ForcingAggregationBuilder,
     HalocarbonChemistryBuilder,
@@ -64,13 +65,7 @@ SEALEVEL = DATA.with_name("04_ssp245_emissions_sealevel")
 CONCENTRATIONS = DATA.with_name("07_ssp245_concentrations")
 LONG = DATA.with_name("08_ssp245_default_2300")
 
-# MAGICC region names in RSCM four-box order.
-BOXES = (
-    "World|Northern Hemisphere|Ocean",
-    "World|Northern Hemisphere|Land",
-    "World|Southern Hemisphere|Ocean",
-    "World|Southern Hemisphere|Land",
-)
+BOXES = REGIONS[GridType.FourBox]
 
 # Relative and absolute tolerances against MAGICC7.
 # Rounding stays orders of magnitude below them and any modelling change far above.

@@ -22,6 +22,7 @@ climate models.
 - [Timeseries][] holds time-indexed data with interpolation support.
 - [FourBoxTimeseries][] and [HemisphericTimeseries][] are its grid variants.
 - [TimeseriesCollection][] holds multiple named timeseries.
+  [rscm.interop][] converts it to and from pandas and xarray.
 - [InterpolationStrategy][] controls how values are interpolated between time points.
 
 **Components**
