@@ -12,7 +12,9 @@ mod ghg;
 mod nitrate_cloud;
 mod ozone;
 
+use rscm_core::errors::RSCMResult;
 use rscm_core::spatial::FourBoxRegion;
+use std::sync::OnceLock;
 
 /// The four boxes in storage order.
 pub(crate) const REGIONS: [FourBoxRegion; 4] = [
@@ -30,3 +32,12 @@ pub use nitrate_cloud::{
     OpticalThicknessLookup,
 };
 pub use ozone::OzoneForcing;
+
+/// The value in `cell`, computed by `f` when it is empty.
+fn memo_ref<T>(cell: &OnceLock<T>, f: impl FnOnce() -> RSCMResult<T>) -> RSCMResult<&T> {
+    if let Some(value) = cell.get() {
+        return Ok(value);
+    }
+    let value = f()?;
+    Ok(cell.get_or_init(|| value))
+}

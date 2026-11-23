@@ -27,7 +27,7 @@
 //! scaled so that the boxes equal `regional_pattern` in `pattern_year`, times a factor.
 //! In the final year of the run the emitted species repeat the year before, as in MAGICC7.
 
-use super::REGIONS;
+use super::{memo_ref, REGIONS};
 use crate::parameters::{ForcingTarget, NitrateCloudForcingParameters};
 use crate::{EMISSION_SECTORS, NH3_SECTORS, NOX_SECTORS};
 use rscm_core::component::{
@@ -145,9 +145,14 @@ const SOX_GROUP: [CloudComponent; 2] = [
 const SEA_SALT_GROUP: [CloudComponent; 1] = [held("Sea Salt", "Optical Thickness|Sea Salt")];
 const SOX_SECTORS: [&str; 2] = ["Emissions|SOx|Fossil", "Emissions|SOx|Biosphere"];
 // First switch slot of each group, then nitrate's.
-const GROUP_SLOTS: [usize; 4] = [0, 2, 5, 7];
-const NITRATE_SLOT: usize = 8;
-const SLOTS: usize = 9;
+const GROUP_SLOTS: [usize; 4] = [
+    0,
+    BC_GROUP.len(),
+    BC_GROUP.len() + OC_GROUP.len(),
+    BC_GROUP.len() + OC_GROUP.len() + SOX_GROUP.len(),
+];
+const NITRATE_SLOT: usize = GROUP_SLOTS[3] + SEA_SALT_GROUP.len();
+const SLOTS: usize = NITRATE_SLOT + 1;
 const SOX_BIOSPHERE: &str = "SOx|Biosphere";
 const BC_FOSSIL: &str = "BC|Fossil";
 
@@ -232,6 +237,15 @@ impl NitrateCloudForcing {
         self.forcing_with(drivers, year, &Constants::default())
     }
 
+    /// Nitrate and cloud albedo forcing in each of `years`, sharing the run constants.
+    pub fn forcing_over(&self, drivers: &Drivers, years: &[Time]) -> RSCMResult<Vec<NitrateCloud>> {
+        let constants = Constants::default();
+        years
+            .iter()
+            .map(|&year| self.forcing_with(drivers, year, &constants))
+            .collect()
+    }
+
     fn forcing_with(
         &self,
         drivers: &Drivers,
@@ -274,11 +288,7 @@ struct Constants {
 }
 
 fn memo<T: Copy>(cell: &OnceLock<T>, f: impl FnOnce() -> RSCMResult<T>) -> RSCMResult<T> {
-    if let Some(value) = cell.get() {
-        return Ok(*value);
-    }
-    let value = f()?;
-    Ok(*cell.get_or_init(|| value))
+    memo_ref(cell, f).copied()
 }
 
 /// Internal state of [`NitrateCloudForcing`]: the run constants of its prescribed inputs.

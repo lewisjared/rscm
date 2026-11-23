@@ -460,10 +460,7 @@ impl NitrateCloudForcingBuilder {
     ) -> PyResult<std::collections::HashMap<String, Py<PyAny>>> {
         let years = time.clone();
         let rows = self.with_drivers(inputs, time, |component, drivers| {
-            years
-                .iter()
-                .map(|&year| component.forcing(drivers, year))
-                .collect::<rscm_core::errors::RSCMResult<Vec<_>>>()
+            component.forcing_over(drivers, &years)
         })?;
         let column = |f: fn(&crate::forcing::NitrateCloud) -> [f64; 4]| {
             numpy::PyArray2::from_vec2(py, &rows.iter().map(|r| f(r).to_vec()).collect::<Vec<_>>())

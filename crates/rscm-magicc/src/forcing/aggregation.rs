@@ -34,7 +34,7 @@
 //!   the same sum over the agents of each [`ForcingCategory`](rscm_core::forcing::ForcingCategory)
 //! - `Efficacy Adjusted Effective Radiative Forcing` (W/m^2, four-box): the ERF that drives the climate
 
-use super::REGIONS;
+use super::{memo_ref, REGIONS};
 use crate::climate::lamcalc::{
     calc_internal_efficacy, compute_qfrac, hemispheric_qfrac, lamcalc, LAMCALCParameters,
 };
@@ -564,14 +564,6 @@ impl Constants {
     fn slot(&self, variable: usize) -> Slot<'_> {
         (&self.held[variable], &self.base[variable])
     }
-}
-
-fn memo_ref<T>(cell: &OnceLock<T>, f: impl FnOnce() -> RSCMResult<T>) -> RSCMResult<&T> {
-    if let Some(value) = cell.get() {
-        return Ok(value);
-    }
-    let value = f()?;
-    Ok(cell.get_or_init(|| value))
 }
 
 /// Internal state of [`ForcingAggregation`]: the run constants of its prescribed inputs.
