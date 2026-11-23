@@ -134,10 +134,10 @@ impl SpatialGrid for FourBoxGrid {
         static NAMES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
         NAMES.get_or_init(|| {
             vec![
-                "Northern Ocean".to_string(),
-                "Northern Land".to_string(),
-                "Southern Ocean".to_string(),
-                "Southern Land".to_string(),
+                "World|Northern Hemisphere|Ocean".to_string(),
+                "World|Northern Hemisphere|Land".to_string(),
+                "World|Southern Hemisphere|Ocean".to_string(),
+                "World|Southern Hemisphere|Land".to_string(),
             ]
         })
     }

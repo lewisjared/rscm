@@ -25,6 +25,7 @@ _SUBMODULES = frozenset(
         "core",
         "example_components",
         "fair",
+        "interop",
         "magicc",
         "names",
         "spec",

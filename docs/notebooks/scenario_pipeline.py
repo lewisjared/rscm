@@ -234,36 +234,18 @@ for scenario, co2_emissions in scenario_emissions.items():
 # %% [markdown]
 # ## Step 4: Compare the Scenarios
 #
-# A hidden helper converts each `TimeseriesCollection` into a pandas DataFrame
-# with a (variable, unit, scenario) index, and stacks the four runs into `all_runs`.
+# `to_dataframe()` converts each `TimeseriesCollection` into a pandas DataFrame,
+# and `pd.concat` stacks the four runs into `all_runs` with a (variable, unit, scenario) index.
+# Every variable here is scalar, so the region level is dropped.
 
-
-# %% tags=["remove_input"]
+# %%
 import pandas as pd
 
-from rscm.core import TimeseriesCollection
-
-
-def timeseries_to_dataframe(
-    collection: TimeseriesCollection, scenario: str
-) -> pd.DataFrame:
-    """Convert a TimeseriesCollection to a DataFrame indexed by (variable, unit, scenario)."""
-    rows = {}
-    for name in collection.names():
-        ts = collection.get_timeseries_by_name(name)
-        rows[(name, ts.unit, scenario)] = pd.Series(
-            ts.values(), index=ts.time_axis.values()
-        )
-    df = pd.DataFrame(rows).T
-    df.index.names = ["variable", "unit", "scenario"]
-    return df
-
-
-all_runs = pd.concat(
-    [
-        timeseries_to_dataframe(historical_results, "historical"),
-        *(timeseries_to_dataframe(r, s) for s, r in scenario_results.items()),
-    ]
+runs = {"historical": historical_results, **scenario_results}
+all_runs = (
+    pd.concat({s: r.to_dataframe() for s, r in runs.items()}, names=["scenario"])
+    .droplevel("region")
+    .reorder_levels(["variable", "unit", "scenario"])
 )
 
 # %% tags=["remove_input"]

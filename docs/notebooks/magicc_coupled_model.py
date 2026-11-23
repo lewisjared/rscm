@@ -796,16 +796,13 @@ results = model.timeseries()
 
 def series(name):
     """Return a variable from the hand-built run, as the global mean for four-box variables."""
-    scalar = results.get_timeseries_by_name(name)
-    if scalar is not None:
-        return scalar.values()
-    return results.get_four_box_timeseries_by_name(name).values() @ area
+    ts = results[name]
+    return ts.values() if isinstance(ts, Timeseries) else ts.global_mean().values()
 
 
-regional_temperature = results.get_four_box_timeseries_by_name(
-    "Surface Air Temperature Change"
-).values()
-global_temperature = regional_temperature @ area
+temperature = results["Surface Air Temperature Change"]
+regional_temperature = temperature.values()
+global_temperature = temperature.global_mean().values()
 print(f"Warming in 2100: {global_temperature[years == 2100][0]:.2f} K")
 
 # %% [markdown]

@@ -1,6 +1,7 @@
 use crate::interpolate::strategies::{
     InterpolationStrategy, LinearSplineStrategy, NextStrategy, PreviousStrategy,
 };
+use crate::python::spatial::{PyFourBoxGrid, PyHemisphericGrid};
 use crate::python::{check_unit, resolve_index};
 use crate::spatial::{FourBoxGrid, HemisphericGrid, ScalarGrid, ScalarRegion};
 use crate::timeseries::{FloatValue, GridTimeseries, Time, TimeAxis, Timeseries};
@@ -197,7 +198,13 @@ impl PyTimeseries {
     }
 
     #[staticmethod]
-    fn from_values(values: Bound<PyAny>, time_axis: Bound<PyTimeAxis>) -> PyResult<Self> {
+    #[pyo3(signature = (values, time_axis, unit=String::new()), text_signature = "(values, time_axis, unit='')")]
+    fn from_values(
+        values: Bound<PyAny>,
+        time_axis: Bound<PyTimeAxis>,
+        unit: String,
+    ) -> PyResult<Self> {
+        let unit = checked_unit("Timeseries", unit)?;
         let values = float_array::<Ix1>(&values, "values")?;
         let time_axis = time_axis.borrow().0.clone();
 
@@ -208,7 +215,7 @@ impl PyTimeseries {
                 values.insert_axis(Axis(1)),
                 time_axis,
                 ScalarGrid,
-                String::new(),
+                unit,
                 InterpolationStrategy::from(LinearSplineStrategy::new(true)),
             )))
         }
@@ -276,6 +283,11 @@ impl PyTimeseries {
         PyTimeAxis(self.0.time_axis())
     }
 
+    /// A copy of the series on `time_axis`, interpolated with its strategy.
+    fn interpolate_into(&self, time_axis: PyRef<PyTimeAxis>) -> Self {
+        Self(self.0.clone().interpolate_into(time_axis.0.clone()))
+    }
+
     // TODO: Figure out how to return a mutable ref to self to enable chaining
     fn with_interpolation_strategy(&mut self, interpolation_strategy: PyInterpolationStrategy) {
         let interpolation_strategy: InterpolationStrategy = interpolation_strategy.into();
@@ -318,11 +330,13 @@ impl PyFourBoxTimeseries {
     /// Create from values with shape (n_times, 4) in grid order
     /// (NH ocean, NH land, SH ocean, SH land).
     #[new]
+    #[pyo3(signature = (values, time_axis, unit, interpolation_strategy, *, grid=None))]
     fn new(
         values: Bound<PyAny>,
         time_axis: Bound<PyTimeAxis>,
         unit: String,
         interpolation_strategy: PyInterpolationStrategy,
+        grid: Option<PyFourBoxGrid>,
     ) -> PyResult<Self> {
         let unit = checked_unit("FourBoxTimeseries", unit)?;
         let values = float_array::<Ix2>(&values, "values")?;
@@ -335,7 +349,7 @@ impl PyFourBoxTimeseries {
         Ok(Self(GridTimeseries::new(
             values,
             time_axis,
-            FourBoxGrid::magicc_standard(),
+            grid.map_or_else(FourBoxGrid::magicc_standard, |g| g.0),
             unit,
             interpolation_strategy.into(),
         )))
@@ -376,6 +390,27 @@ impl PyFourBoxTimeseries {
     fn time_axis(&self) -> PyTimeAxis {
         PyTimeAxis(self.0.time_axis())
     }
+
+    #[getter]
+    fn interpolation_strategy(&self) -> PyInterpolationStrategy {
+        self.0.interpolation_strategy().into()
+    }
+
+    /// The grid, with the weights that `global_mean` uses.
+    #[getter]
+    fn grid(&self) -> PyFourBoxGrid {
+        PyFourBoxGrid(self.0.grid().clone())
+    }
+
+    /// The weighted mean over the regions at each step, as a scalar series.
+    fn global_mean(&self) -> PyTimeseries {
+        PyTimeseries(self.0.aggregate_global())
+    }
+
+    /// A copy of the series on `time_axis`, interpolated with its strategy.
+    fn interpolate_into(&self, time_axis: PyRef<PyTimeAxis>) -> Self {
+        Self(self.0.clone().interpolate_into(time_axis.0.clone()))
+    }
 }
 
 /// Python wrapper for Hemispheric grid timeseries
@@ -387,11 +422,13 @@ pub struct PyHemisphericTimeseries(pub GridTimeseries<FloatValue, HemisphericGri
 impl PyHemisphericTimeseries {
     /// Create from values with shape (n_times, 2) in grid order (northern, southern).
     #[new]
+    #[pyo3(signature = (values, time_axis, unit, interpolation_strategy, *, grid=None))]
     fn new(
         values: Bound<PyAny>,
         time_axis: Bound<PyTimeAxis>,
         unit: String,
         interpolation_strategy: PyInterpolationStrategy,
+        grid: Option<PyHemisphericGrid>,
     ) -> PyResult<Self> {
         let unit = checked_unit("HemisphericTimeseries", unit)?;
         let values = float_array::<Ix2>(&values, "values")?;
@@ -404,7 +441,7 @@ impl PyHemisphericTimeseries {
         Ok(Self(GridTimeseries::new(
             values,
             time_axis,
-            HemisphericGrid::equal_weights(),
+            grid.map_or_else(HemisphericGrid::equal_weights, |g| g.0),
             unit,
             interpolation_strategy.into(),
         )))
@@ -444,5 +481,26 @@ impl PyHemisphericTimeseries {
     #[getter]
     fn time_axis(&self) -> PyTimeAxis {
         PyTimeAxis(self.0.time_axis())
+    }
+
+    #[getter]
+    fn interpolation_strategy(&self) -> PyInterpolationStrategy {
+        self.0.interpolation_strategy().into()
+    }
+
+    /// The grid, with the weights that `global_mean` uses.
+    #[getter]
+    fn grid(&self) -> PyHemisphericGrid {
+        PyHemisphericGrid(self.0.grid().clone())
+    }
+
+    /// The weighted mean over the regions at each step, as a scalar series.
+    fn global_mean(&self) -> PyTimeseries {
+        PyTimeseries(self.0.aggregate_global())
+    }
+
+    /// A copy of the series on `time_axis`, interpolated with its strategy.
+    fn interpolate_into(&self, time_axis: PyRef<PyTimeAxis>) -> Self {
+        Self(self.0.clone().interpolate_into(time_axis.0.clone()))
     }
 }

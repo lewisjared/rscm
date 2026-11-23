@@ -435,6 +435,17 @@ where
         &self.grid
     }
 
+    /// Replace the grid, keeping the values.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `grid` has another number of regions.
+    pub fn with_grid(mut self, grid: G) -> Self {
+        assert_eq!(grid.size(), self.grid.size(), "Grid size must not change");
+        self.grid = grid;
+        self
+    }
+
     /// Get the time axis
     pub fn time_axis(&self) -> Arc<TimeAxis> {
         self.time_axis.clone()
@@ -1339,7 +1350,7 @@ mod tests {
             assert_eq!(northern_ocean.at(0, ScalarRegion::Global), Some(15.0));
             assert_eq!(northern_ocean.at(1, ScalarRegion::Global), Some(16.0));
 
-            let northern_land = ts.region_by_name("Northern Land").unwrap();
+            let northern_land = ts.region_by_name("World|Northern Hemisphere|Land").unwrap();
             assert_eq!(northern_land.at(0, ScalarRegion::Global), Some(14.0));
             assert_eq!(northern_land.at(1, ScalarRegion::Global), Some(15.0));
         }

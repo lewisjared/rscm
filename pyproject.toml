@@ -35,6 +35,9 @@ fair = [
     "fair>=2.2.5,<2.3",
     "xarray",
 ]
+xarray = [
+    "xarray",
+]
 
 [build-system]
 requires = [

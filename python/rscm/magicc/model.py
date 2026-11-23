@@ -47,16 +47,13 @@ from rscm._lib.magicc import (
     TerrestrialCarbonBuilder,
 )
 from rscm.core import (
-    FourBoxTimeseries,
     GridType,
-    HemisphericTimeseries,
-    InterpolationStrategy,
     ModelBuilder,
     TimeAxis,
-    Timeseries,
     VariableRole,
     VariableSchema,
 )
+from rscm.interop import _grid_of, from_inputs
 from rscm.magicc import prescribed as pr
 from rscm.names import (
     ATMOSPHERIC_CONCENTRATIONS_CO2,
@@ -73,7 +70,7 @@ if TYPE_CHECKING:
     from numpy.typing import ArrayLike, NDArray
 
     from rscm._lib.core import RustComponent
-    from rscm.core import Model
+    from rscm.core import Model, TimeseriesCollection
 
     Inputs = Mapping[str, tuple[ArrayLike, str]]
 
@@ -123,22 +120,14 @@ def with_lags(builder: ModelBuilder) -> ModelBuilder:
     return builder
 
 
-def _grid(values: NDArray[np.float64]) -> GridType:
-    if values.ndim == 1:
-        return GridType.Scalar
-    return GridType.FourBox if values.shape[1] == 4 else GridType.Hemispheric  # noqa: PLR2004
-
-
 _GRID_RESOLUTION = (GridType.Scalar, GridType.Hemispheric, GridType.FourBox)
 
 
 def _schema(
-    components: Sequence[RustComponent],
-    prescribed: Mapping[str, tuple[NDArray[np.float64], str]],
+    components: Sequence[RustComponent], prescribed: TimeseriesCollection
 ) -> VariableSchema:
     variables = {
-        name: (unit, _grid(np.asarray(values)))
-        for name, (values, unit) in prescribed.items()
+        name: (prescribed[name].unit, _grid_of(prescribed[name])) for name in prescribed
     }
     for component in components:
         for d in component.definitions():
@@ -150,27 +139,17 @@ def _schema(
     return schema
 
 
-def _grid_setup(
-    components: Sequence[RustComponent],
-    prescribed: Mapping[str, tuple[NDArray[np.float64], str]],
-) -> tuple[VariableSchema | None, dict[GridType, list[float]]]:
-    """Return the schema and grid weights, which only four-box components need."""
-    if not any(d.grid == GridType.FourBox for c in components for d in c.definitions()):
-        return None, {}
-    return _schema(components, prescribed), {
-        GridType.FourBox: list(pr.area_fractions())
-    }
-
-
-def _timeseries(
-    values: NDArray[np.float64], axis: TimeAxis, unit: str
-) -> Timeseries | FourBoxTimeseries | HemisphericTimeseries:
-    grid = _grid(values)
-    if grid == GridType.FourBox:
-        return FourBoxTimeseries(values, axis, unit, InterpolationStrategy.Linear)
-    if grid == GridType.Hemispheric:
-        return HemisphericTimeseries(values, axis, unit, InterpolationStrategy.Linear)
-    return Timeseries(values, axis, unit, InterpolationStrategy.Linear)
+def _prescribe(
+    components: Sequence[RustComponent], prescribed: Inputs, time_axis: TimeAxis
+) -> tuple[TimeseriesCollection, VariableSchema | None, dict[GridType, list[float]]]:
+    """Return the prescribed series, and the schema and weights of four-box grids."""
+    four_box = any(
+        d.grid == GridType.FourBox for c in components for d in c.definitions()
+    )
+    grid_weights = {GridType.FourBox: list(pr.area_fractions())} if four_box else {}
+    collection = from_inputs(prescribed, time_axis, grid_weights=grid_weights)
+    schema = _schema(components, collection) if four_box else None
+    return collection, schema, grid_weights
 
 
 def build_from_components(  # noqa: PLR0913
@@ -191,7 +170,7 @@ def build_from_components(  # noqa: PLR0913
     ``lags`` adds feedback lags to the builder, such as `with_lags`.
     """
     builder = ModelBuilder().with_time_axis(time_axis)
-    schema, grid_weights = _grid_setup(components, prescribed)
+    series, schema, grid_weights = _prescribe(components, prescribed, time_axis)
     if schema is not None:
         builder.with_schema(schema)
     for grid, weights in grid_weights.items():
@@ -200,10 +179,8 @@ def build_from_components(  # noqa: PLR0913
         builder.with_component(component)
     if lags is not None:
         lags(builder)
-    for name, (values, unit) in prescribed.items():
-        builder.with_prescribed_variable(
-            name, _timeseries(np.asarray(values, dtype=np.float64), time_axis, unit)
-        )
+    for name in series:
+        builder.with_prescribed_variable(name, series[name])
     builder.with_initial_values(dict(initial_values))
     builder.with_initial_grid_values(
         {k: list(v) for k, v in initial_grid_values.items()}
@@ -393,7 +370,9 @@ def setup(  # noqa: PLR0913
             for d in components["SeaLevelRise"].definitions()
             if d.role == VariableRole.Output
         }
-    schema, grid_weights = _grid_setup(list(components.values()), prescribed)
+    series, schema, grid_weights = _prescribe(
+        list(components.values()), prescribed, time_axis
+    )
     spec = ModelSpec(
         components=specs,
         lags=LAGS,
@@ -407,10 +386,4 @@ def setup(  # noqa: PLR0913
         schema=schema,
         name=name,
     )
-    return spec.bind(
-        {
-            key: _timeseries(values, time_axis, unit)
-            for key, (values, unit) in prescribed.items()
-        },
-        time_axis,
-    )
+    return spec.bind({name: series[name] for name in series}, time_axis)

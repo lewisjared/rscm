@@ -22,6 +22,7 @@ See https://oprypin.github.io/mkdocs-literate-nav/
   * [ClimateUDEB Time Conventions](modules/time_conventions.md)
   * [Configuration Layer](model_configuration.md)
   * [Spatial Grids](grids.md)
+  * [Pandas and xarray](interop.md)
   * [Physical Units](notebooks/units_tutorial.py)
   * [Python API](api/rscm/)
 * [Components](components/index.md)
