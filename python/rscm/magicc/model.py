@@ -429,12 +429,11 @@ def setup(  # noqa: PLR0913
     _check_read(v, inputs, components.values())
     v.raise_if_any()
     first = {key: values[0] for key, (values, _) in prescribed.items()}
-    given = {
-        **_first_fgas_forcing(
+    given = dict(config.get("initial_forcing", {}))
+    if ERF_F_GASES not in given:
+        given |= _first_fgas_forcing(
             components, prescribed, config["initial_values"], time_axis
-        ),
-        **config.get("initial_forcing", {}),
-    }
+        )
     aggregation = specs["ForcingAggregation"]
     total, boxes = aggregation.configure().aggregate(
         _initial_forcing(aggregation.parameters["agents"], first, given)
