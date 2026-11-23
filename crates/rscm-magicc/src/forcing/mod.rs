@@ -12,6 +12,16 @@ mod ghg;
 mod nitrate_cloud;
 mod ozone;
 
+use rscm_core::spatial::FourBoxRegion;
+
+/// The four boxes in storage order.
+pub(crate) const REGIONS: [FourBoxRegion; 4] = [
+    FourBoxRegion::NorthernOcean,
+    FourBoxRegion::NorthernLand,
+    FourBoxRegion::SouthernOcean,
+    FourBoxRegion::SouthernLand,
+];
+
 pub use aggregation::ForcingAggregation;
 pub use ghg::GHGForcing;
 pub use nitrate_cloud::{

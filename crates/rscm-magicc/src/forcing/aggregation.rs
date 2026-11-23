@@ -34,6 +34,7 @@
 //!   the same sum over the agents of each [`ForcingCategory`](rscm_core::forcing::ForcingCategory)
 //! - `Efficacy Adjusted Effective Radiative Forcing` (W/m^2, four-box): the ERF that drives the climate
 
+use super::REGIONS;
 use crate::climate::lamcalc::{
     calc_internal_efficacy, compute_qfrac, hemispheric_qfrac, lamcalc, LAMCALCParameters,
 };
@@ -44,7 +45,6 @@ use rscm_core::component::{
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::forcing::ForcingSubtotals;
 use rscm_core::names::{EFFICACY_ADJUSTED_ERF, EQUILIBRIUM_CLIMATE_SENSITIVITY, ERF, ERF_2XCO2};
-use rscm_core::spatial::FourBoxRegion;
 use rscm_core::state::{FourBoxSlice, VariableSource};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentMetadata;
@@ -469,13 +469,6 @@ impl ForcingAggregation {
         total.unwrap_or_default()
     }
 }
-
-const REGIONS: [FourBoxRegion; 4] = [
-    FourBoxRegion::NorthernOcean,
-    FourBoxRegion::NorthernLand,
-    FourBoxRegion::SouthernOcean,
-    FourBoxRegion::SouthernLand,
-];
 
 /// Global ERF and efficacy-adjusted (or plain) box forcing.
 type Forcing = (FloatValue, [FloatValue; 4]);

@@ -127,16 +127,6 @@ def _extend(
     return out
 
 
-def _scale(target: float | None, factor: float | None, reference: float) -> float:
-    """``factor``, or the factor that scales ``reference`` to ``target``."""
-    if factor is not None:
-        return float(factor)
-    if target is None:
-        msg = "give harmonisation_target or factor"
-        raise ValueError(msg)
-    return float(target / reference)
-
-
 def direct_aerosol(
     years: ArrayLike,
     industrial: AerosolHistory,

@@ -27,7 +27,9 @@
 //! scaled so that the boxes equal `regional_pattern` in `pattern_year`, times a factor.
 //! In the final year of the run the emitted species repeat the year before, as in MAGICC7.
 
+use super::REGIONS;
 use crate::parameters::{ForcingTarget, NitrateCloudForcingParameters};
+use crate::EMISSION_SECTORS;
 use rscm_core::component::{
     Component, ComponentState, InputState, OutputWriter, VariableDefinition,
 };
@@ -36,7 +38,6 @@ use rscm_core::names::{
     child, EMISSIONS_BC, EMISSIONS_NH3, EMISSIONS_NOX, EMISSIONS_OC, EMISSIONS_SOX,
     ERF_AEROSOLS_DIRECT_EFFECT, ERF_AEROSOLS_INDIRECT_EFFECT, OPTICAL_THICKNESS,
 };
-use rscm_core::spatial::FourBoxRegion;
 use rscm_core::state::{FourBoxSlice, VariableSource};
 use rscm_core::timeseries::{FloatValue, Time};
 use rscm_core::ComponentMetadata;
@@ -73,14 +74,6 @@ pub struct NitrateCloud {
     /// Cloud albedo forcing
     pub cloud_albedo: Boxes,
 }
-
-const SECTORS: [&str; 2] = ["Fossil", "Biosphere"];
-const REGIONS: [FourBoxRegion; 4] = [
-    FourBoxRegion::NorthernOcean,
-    FourBoxRegion::NorthernLand,
-    FourBoxRegion::SouthernOcean,
-    FourBoxRegion::SouthernLand,
-];
 
 /// A cloud-active component: its optical thickness segment and the emissions that extend it.
 struct CloudComponent {
@@ -143,7 +136,7 @@ fn emissions_names() -> Vec<String> {
         EMISSIONS_OC,
     ]
     .iter()
-    .flat_map(|gas| SECTORS.map(|sector| child(gas, sector)))
+    .flat_map(|gas| EMISSION_SECTORS.map(|sector| child(gas, sector)))
     .collect()
 }
 
@@ -482,7 +475,7 @@ impl Component for NitrateCloudForcing {
         definitions.extend(optical_thickness_species().map(|species| {
             VariableDefinition::four_box_input(&optical_thickness_name(species), "1")
         }));
-        for sector in SECTORS {
+        for sector in EMISSION_SECTORS {
             definitions.push(VariableDefinition::four_box_output(
                 &nitrate_name(sector),
                 "W/m^2",
