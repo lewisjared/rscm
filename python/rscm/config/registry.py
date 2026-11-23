@@ -12,8 +12,8 @@ Examples
 ... class MyComponentBuilder:
 ...     pass
 >>>
->>> component_registry.get("MyComponent")
-<class 'MyComponentBuilder'>
+>>> component_registry.get("MyComponent") is MyComponentBuilder
+True
 """
 
 from __future__ import annotations
@@ -41,8 +41,8 @@ class ComponentRegistry:
     >>> from rscm.two_layer import TwoLayerBuilder
     >>> registry = ComponentRegistry()
     >>> registry.register("TwoLayer", TwoLayerBuilder)
-    >>> registry.get("TwoLayer")
-    <class 'TwoLayerBuilder'>
+    >>> registry.get("TwoLayer") is TwoLayerBuilder
+    True
     """
 
     def __init__(self) -> None:
