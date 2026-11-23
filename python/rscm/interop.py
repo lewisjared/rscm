@@ -89,6 +89,7 @@ REGIONS: dict[GridType, tuple[str, ...]] = {
 
 _FINEST_FIRST = (GridType.FourBox, GridType.Hemispheric, GridType.Scalar)
 _KNOWN_REGIONS = frozenset(r for regions in REGIONS.values() for r in regions)
+_GRID_BY_SIZE = {len(regions): grid for grid, regions in REGIONS.items()}
 _STRATEGIES = (
     ("linear", InterpolationStrategy.Linear),
     ("previous", InterpolationStrategy.Previous),
@@ -111,6 +112,14 @@ def _value_of(name: str, table: Sequence[tuple[str, Any]], kind: str) -> Any:
             return value
     msg = f"Unknown {kind} {name!r}"
     raise ValueError(msg)
+
+
+def _strategy_for(
+    name: str, interpolation_strategy: Strategies | None
+) -> InterpolationStrategy | None:
+    if isinstance(interpolation_strategy, Mapping):
+        return interpolation_strategy.get(name)
+    return interpolation_strategy
 
 
 def _grid_of(ts: AnyTimeseries) -> GridType:
@@ -315,10 +324,7 @@ def from_dataframe(
         by_region = rows.droplevel(["variable", "unit"])
         grid = _pick_grid(name, list(by_region.index))
         values = by_region.loc[list(REGIONS[grid])].to_numpy(dtype=np.float64).T
-        if isinstance(interpolation_strategy, Mapping):
-            strategy = interpolation_strategy.get(name)
-        else:
-            strategy = interpolation_strategy
+        strategy = _strategy_for(name, interpolation_strategy)
         if strategy is None:
             strategy = _value_of(
                 strategies.get(name, "linear"), _STRATEGIES, "interpolation strategy"
@@ -501,15 +507,13 @@ def from_inputs(
         if len(array) == len(time_axis) - 1:
             array = np.concatenate([array, array[-1:]])
         array = array.reshape(len(array), -1)
-        by_size = {len(regions): grid for grid, regions in REGIONS.items()}
-        if array.shape[1] not in by_size:
+        if array.shape[1] not in _GRID_BY_SIZE:
             msg = f"'{name}' has {array.shape[1]} columns, expected 4 or 2"
             raise ValueError(msg)
-        grid = by_size[array.shape[1]]
-        if isinstance(interpolation_strategy, Mapping):
-            strategy = interpolation_strategy.get(name, InterpolationStrategy.Linear)
-        else:
-            strategy = interpolation_strategy
+        grid = _GRID_BY_SIZE[array.shape[1]]
+        strategy = _strategy_for(name, interpolation_strategy)
+        if strategy is None:
+            strategy = InterpolationStrategy.Linear
         collection.add_timeseries(
             name, _make(grid, array, time_axis, unit, strategy, None)
         )
