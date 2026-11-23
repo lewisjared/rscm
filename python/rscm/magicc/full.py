@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
-from rscm._lib.magicc import HalocarbonChemistryBuilder
+from rscm._lib.magicc import CH4ChemistryBuilder, HalocarbonChemistryBuilder
 from rscm.core import TimeAxis
 from rscm.magicc import checks, emissions_driven, model
 from rscm.magicc import prescribed as pr
@@ -427,17 +427,11 @@ def _thermal_expansion_coefficients(parameters: Mapping[str, Any]) -> Sequence[f
     return THERMAL_EXPANSION_FILES[file] if file else given
 
 
-def _ch4_non_oh_lifetime(parameters: Mapping[str, Any]) -> float:
-    """CH4 lifetime against soil, stratospheric and chlorine loss, as in MAGICC7."""
-    p = parameters
-    return 1.0 / (
-        1.0 / p["ch4_tausoil"] + 1.0 / p["ch4_taustrat"] + 1.0 / p["ch4_tautropcl"]
-    )
-
-
-def _ch4_oh_lifetime(parameters: Mapping[str, Any]) -> float:
-    return 1.0 / (
-        1.0 / parameters["ch4_tautot_init"] - 1.0 / _ch4_non_oh_lifetime(parameters)
+def _ch4_chemistry(parameters: Mapping[str, Any]) -> CH4ChemistryBuilder:
+    return CH4ChemistryBuilder.from_parameters(
+        cast(
+            "Any", {ours: parameters[theirs] for ours, theirs in CH4_PARAMETERS.items()}
+        )
     )
 
 
@@ -1388,7 +1382,7 @@ def _check_ranges(v: Validator, p: Mapping[str, Any]) -> None:
                 value > 0.0, IssueKind.OUT_OF_RANGE, key, f"{value} must be positive"
             )
     if all(float(p[k]) > 0.0 for k in (*sinks, "ch4_tautot_init")):
-        non_oh = _ch4_non_oh_lifetime(p)
+        non_oh = _ch4_chemistry(p).non_oh_lifetime()
         v.check(
             p["ch4_tautot_init"] < non_oh,
             IssueKind.OUT_OF_RANGE,
@@ -1606,8 +1600,9 @@ def natural_emissions(
         },
         convention,
     )
-    non_oh_lifetime = _ch4_non_oh_lifetime(p)
-    oh_lifetime = _ch4_oh_lifetime(p)
+    ch4 = _ch4_chemistry(p)
+    non_oh_lifetime = ch4.non_oh_lifetime()
+    oh_lifetime = ch4.initial_oh_lifetime()
     budget = {
         "CH4": (
             (oh_lifetime, non_oh_lifetime),

@@ -412,6 +412,10 @@ class CH4ChemistryBuilder(ComponentBuilder):
     @staticmethod
     def from_parameters(parameters: CH4ChemistryParameters) -> CH4ChemistryBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
+    def non_oh_lifetime(self) -> float:
+        """Return the CH4 lifetime in yr against soil, stratospheric and Cl loss."""
+    def initial_oh_lifetime(self) -> float:
+        """Return the CH4 lifetime in yr against OH at the start."""
     def build(self) -> RustComponent:
         """Build the CH4 chemistry component."""
 

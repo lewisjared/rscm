@@ -143,6 +143,19 @@ fn take_subannual_values<'py>(
 
 // Chemistry components
 create_component_builder!(CH4ChemistryBuilder, CH4Chemistry, CH4ChemistryParameters);
+
+#[pymethods]
+impl CH4ChemistryBuilder {
+    /// CH4 lifetime (yr) against soil, stratospheric and chlorine loss.
+    pub fn non_oh_lifetime(&self) -> f64 {
+        self.parameters.non_oh_lifetime()
+    }
+
+    /// CH4 lifetime (yr) against OH at the start.
+    pub fn initial_oh_lifetime(&self) -> f64 {
+        self.parameters.initial_oh_lifetime()
+    }
+}
 create_component_builder!(CH4OxidationBuilder, CH4Oxidation, CH4OxidationParameters);
 
 #[pymethods]
