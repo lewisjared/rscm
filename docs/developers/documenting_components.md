@@ -107,7 +107,7 @@ A `unit:` line in a parameter's doc comment fills the Unit column of the paramet
 | `description`                        | The combined doc comments                             |
 | `category`, `tags`                   | From the `#[component(...)]` attribute                |
 | `inputs`, `outputs`, `states`        | Name, unit, grid and description of each IO field     |
-| `parameters`                         | Name, type, unit, default and doc comment of each     |
+| `parameters`                         | Name, type and doc comment for each parameter         |
 
 ### Parameters
 

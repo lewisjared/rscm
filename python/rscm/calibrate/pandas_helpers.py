@@ -141,6 +141,7 @@ def target_from_dataframe(  # noqa: PLR0913
 
     Examples
     --------
+    >>> import pandas as pd
     >>> from rscm.calibrate import Target
     >>> # Single variable with absolute uncertainties
     >>> df = pd.DataFrame(
