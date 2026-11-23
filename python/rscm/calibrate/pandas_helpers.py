@@ -103,6 +103,8 @@ def target_from_dataframe(  # noqa: PLR0913
 
     Each row is one observation.
     Columns may also be index levels, including levels of a MultiIndex.
+    This long layout differs from the wide one of `rscm.interop.to_dataframe`,
+    see the Pandas and xarray guide to convert between them.
 
     Parameters
     ----------

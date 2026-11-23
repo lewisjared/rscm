@@ -29,14 +29,15 @@ results.loc["Atmospheric Concentrations|CO2"]
 The DataFrame has a row for each variable and region and a column for each step start, in decimal years.
 Its index levels are `variable`, `unit` and `region`, the IAMC layout that scmdata and pandas-indexing read.
 A scalar variable has the region `World`.
-A grid variable has a row per region, labelled as MAGICC7 output labels them:
+A grid variable has a row per region, labelled by its grid's `region_names()`,
+which follow MAGICC7's output labels:
 
 - Scalar: `World`.
 - Four-box: `World|Northern Hemisphere|Ocean`, `World|Northern Hemisphere|Land`,
   `World|Southern Hemisphere|Ocean` and `World|Southern Hemisphere|Land`.
 - Hemispheric: `World|Northern Hemisphere` and `World|Southern Hemisphere`.
 
-`rscm.interop.REGIONS` holds these labels in grid order.
+`rscm.interop.REGIONS` holds these labels in grid order, read from the grids.
 Modelled values a run has not reached yet are NaN.
 
 ## Global means of grid variables
@@ -154,6 +155,31 @@ so `from_inputs(inputs, time_axis).to_dataframe()` shows the inputs that `from_m
 The inputs carry only values and units.
 `from_inputs` takes `interpolation_strategy` and `grid_weights` as `from_dataframe` does,
 and otherwise reads every series as linear on its grid's default weights.
+`setup_model` builds its prescribed series with `from_inputs` too.
+FaIR's are `Previous`, so pass `interpolation_strategy=InterpolationStrategy.Previous`
+to see FaIR inputs as `from_fair` does.
+MAGICC's are linear, with `rscm.magicc.prescribed.area_fractions()` as four-box weights.
 `to_inputs` keeps each series' unit, so the DataFrame must use the units the model's components declare.
 `from_magicc7` takes its emissions keyed by species and sector, such as `CO2|Fossil`,
 so a scenario of MAGICC emissions goes in as its `emissions` argument rather than through `to_inputs`.
+
+## Calibration targets
+
+`Target.from_dataframe` reads observations, not timeseries,
+so it takes a long layout rather than the wide layout of `to_dataframe`.
+It has a row per observation, with `time`, `value` and `uncertainty` columns
+and a `variable` column or `variable=` argument.
+It reads no unit or region, so select one region and convert to the model's units first.
+Stack a wide DataFrame into the long layout:
+
+```python
+observed = model.timeseries().to_dataframe()
+obs_df = (
+    observed.xs("World", level="region")
+    .droplevel("unit")
+    .stack()
+    .rename("value")
+    .reset_index()
+)
+target = Target.from_dataframe(obs_df, relative_error=0.05)
+```

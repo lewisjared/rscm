@@ -29,7 +29,7 @@ impl From<ScalarRegion> for usize {
 ///
 /// let grid = ScalarGrid;
 /// assert_eq!(grid.size(), 1);
-/// assert_eq!(grid.region_names()[0], "Global");
+/// assert_eq!(grid.region_names()[0], "World");
 ///
 /// let value = vec![288.15]; // K
 /// let global = grid.aggregate_global(&value);
@@ -49,7 +49,7 @@ impl SpatialGrid for ScalarGrid {
 
     fn region_names(&self) -> &[String] {
         static NAMES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
-        NAMES.get_or_init(|| vec!["Global".to_string()])
+        NAMES.get_or_init(|| vec!["World".to_string()])
     }
 
     fn aggregate_global(&self, values: &[FloatValue]) -> FloatValue {

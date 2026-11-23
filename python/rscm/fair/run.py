@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from rscm import names
-from rscm.core import InterpolationStrategy, Timeseries
+from rscm.core import InterpolationStrategy
 from rscm.fair import naming
 from rscm.fair.config import (
     FairConfig,
@@ -18,6 +18,7 @@ from rscm.fair.config import (
     lags,
 )
 from rscm.fair.validation import validate
+from rscm.interop import from_inputs
 from rscm.spec import ModelSetup, ModelSpec
 
 if TYPE_CHECKING:
@@ -102,9 +103,7 @@ def _setup_model(
         if name in scales:
             array = array * scales[name]
         first[name] = float(array[0])
-        prescribed[name] = Timeseries(
-            array, time_axis, unit, InterpolationStrategy.Previous
-        )
+        prescribed[name] = (array, unit)
     initial = initial_values(config)
     agents = [naming.forcing(s) for s in forcing_agents(config)]
     # FaIR's first forcing is the prescribed forcing, before any feedback.
@@ -123,4 +122,7 @@ def _setup_model(
         initial_values=initial,
         name="FaIR",
     )
-    return spec.bind(prescribed, time_axis)
+    series = from_inputs(
+        prescribed, time_axis, interpolation_strategy=InterpolationStrategy.Previous
+    )
+    return spec.bind({name: series[name] for name in series}, time_axis)

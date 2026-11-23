@@ -19,7 +19,7 @@ and for prescribed data alike.
   and [from_inputs][rscm.interop.from_inputs] reads them into a collection.
 
 A scalar variable has the region `World`.
-A grid variable has one row per region, labelled as MAGICC7 output labels them,
+A grid variable has one row per region, labelled by its grid's `region_names()`,
 see `REGIONS`.
 `global_mean=True` adds a `World` row to each grid variable,
 its mean weighted by the grid weights.
@@ -51,6 +51,7 @@ from rscm.core import (
     HemisphericGrid,
     HemisphericTimeseries,
     InterpolationStrategy,
+    ScalarGrid,
     TimeAxis,
     Timeseries,
     TimeseriesCollection,
@@ -77,16 +78,11 @@ INDEX = ("variable", "unit", "region")
 """Index levels of a DataFrame, in order."""
 
 REGIONS: dict[GridType, tuple[str, ...]] = {
-    GridType.Scalar: ("World",),
-    GridType.FourBox: (
-        "World|Northern Hemisphere|Ocean",
-        "World|Northern Hemisphere|Land",
-        "World|Southern Hemisphere|Ocean",
-        "World|Southern Hemisphere|Land",
-    ),
-    GridType.Hemispheric: ("World|Northern Hemisphere", "World|Southern Hemisphere"),
+    GridType.Scalar: tuple(ScalarGrid().region_names()),
+    GridType.FourBox: tuple(FourBoxGrid().region_names()),
+    GridType.Hemispheric: tuple(HemisphericGrid().region_names()),
 }
-"""Region labels of each grid, in grid order."""
+"""Region labels of each grid, in grid order, from the grids' `region_names()`."""
 
 _FINEST_FIRST = (GridType.FourBox, GridType.Hemispheric, GridType.Scalar)
 _KNOWN_REGIONS = frozenset(r for regions in REGIONS.values() for r in regions)
@@ -178,7 +174,7 @@ def _table(
             weights[name] = [float(w) for w in ts.grid.weights()]
             if global_mean:
                 values = np.vstack([ts.global_mean().values(), values])
-                labels = ["World", *labels]
+                labels = [*REGIONS[GridType.Scalar], *labels]
         axis = ts.time_axis
         index = next((i for i, known in enumerate(axes) if known == axis), len(axes))
         if index == len(axes):
@@ -588,7 +584,7 @@ def from_xarray(
                 msg = f"'{name}' has no 'unit' attribute"
                 raise ValueError(msg)
             if "region" not in array.dims:
-                regions = ["World"]
+                regions = list(REGIONS[GridType.Scalar])
                 values = array.transpose("time").to_numpy()[np.newaxis, :]
             else:
                 by_region = array.transpose("region", "time").to_numpy()

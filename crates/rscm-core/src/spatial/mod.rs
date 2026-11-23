@@ -343,10 +343,11 @@ pub trait SpatialGrid: Clone + std::fmt::Debug + Send + Sync {
     /// Number of spatial regions in this grid
     fn size(&self) -> usize;
 
-    /// Names of regions in this grid
+    /// Names of regions in this grid, in grid order, as MAGICC7 output labels them
     ///
     /// For example, a four-box grid returns:
-    /// `["Northern Ocean", "Northern Land", "Southern Ocean", "Southern Land"]`
+    /// `["World|Northern Hemisphere|Ocean", "World|Northern Hemisphere|Land",
+    /// "World|Southern Hemisphere|Ocean", "World|Southern Hemisphere|Land"]`
     fn region_names(&self) -> &[String];
 
     /// Aggregate all regional values to a single global value

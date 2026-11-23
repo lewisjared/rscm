@@ -5,7 +5,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from rscm.core import GridType
+from rscm.core import GridType, TimeAxis
+from rscm.interop import from_inputs
 from rscm.magicc import full, model
 from rscm.magicc import prescribed as pr
 from rscm.names import Convention
@@ -87,7 +88,9 @@ def test_schema_keeps_the_finest_grid():
     temperature = SimpleNamespace(name="T", unit="K", grid=GridType.FourBox)
     component = SimpleNamespace(definitions=lambda: [erf, temperature])
 
-    schema = model._schema([component], {"ERF": (np.zeros((3, 2)), "W/m^2")})
+    axis = TimeAxis.from_values([2000.0, 2001.0, 2002.0])
+    prescribed = from_inputs({"ERF": (np.zeros((3, 2)), "W/m^2")}, axis)
+    schema = model._schema([component], prescribed)
 
     assert schema.variables["ERF"].grid == GridType.Hemispheric
     assert schema.variables["T"].grid == GridType.FourBox
