@@ -471,15 +471,15 @@ impl NitrateCloudForcingBuilder {
         };
         Ok(std::collections::HashMap::from([
             (
-                "Effective Radiative Forcing|Aerosols|Direct Effect|NO3|Fossil".to_string(),
+                crate::forcing::NITRATE_SECTORS[0].to_string(),
                 column(|r| r.nitrate_fossil)?,
             ),
             (
-                "Effective Radiative Forcing|Aerosols|Direct Effect|NO3|Biosphere".to_string(),
+                crate::forcing::NITRATE_SECTORS[1].to_string(),
                 column(|r| r.nitrate_biosphere)?,
             ),
             (
-                "Effective Radiative Forcing|Aerosols|Indirect Effect".to_string(),
+                rscm_core::names::ERF_AEROSOLS_INDIRECT_EFFECT.to_string(),
                 column(|r| r.cloud_albedo)?,
             ),
         ]))
@@ -539,7 +539,9 @@ impl SeriesLookup {
         self.time.first().copied().unwrap_or(f64::NAN)
     }
 
-    /// Value at a node, held beyond the ends and linear between nodes.
+    /// Value at a node, held beyond the ends.
+    ///
+    /// Errors between nodes, because the model's interpolation is not repeated here.
     fn at(&self, name: &str, t: f64) -> rscm_core::errors::RSCMResult<Vec<f64>> {
         let rows = self.series.get(name).ok_or_else(|| {
             rscm_core::errors::RSCMError::Error(format!("no prescribed series for {name}"))
@@ -560,12 +562,9 @@ impl SeriesLookup {
         if time[i] == t {
             return Ok(rows[i].clone());
         }
-        let w = (t - time[i]) / (time[i + 1] - time[i]);
-        Ok(rows[i]
-            .iter()
-            .zip(&rows[i + 1])
-            .map(|(a, b)| a + w * (b - a))
-            .collect())
+        Err(rscm_core::errors::RSCMError::Error(format!(
+            "{name} is read at {t}, between the times of its prescribed series"
+        )))
     }
 }
 

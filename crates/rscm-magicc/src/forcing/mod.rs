@@ -24,6 +24,7 @@ pub(crate) const REGIONS: [FourBoxRegion; 4] = [
 
 pub use aggregation::ForcingAggregation;
 pub use ghg::GHGForcing;
+pub(crate) use nitrate_cloud::NITRATE_SECTORS;
 pub use nitrate_cloud::{
     optical_thickness_name, Drivers, EmissionsLookup, NitrateCloud, NitrateCloudForcing,
     OpticalThicknessLookup,

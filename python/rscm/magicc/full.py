@@ -859,7 +859,7 @@ def prescribed_forcing(
     land_use = inputs["file_landuse_rf"]
     co2_biosphere = emissions["CO2|Biosphere"]
     out["Land-use Change"] = pr.land_use(years, land_use, co2_biosphere)
-    out[f"{DIRECT}|Mineral Dust"] = pr.mineral_dust(years, land_use, co2_biosphere)
+    out[f"{DIRECT}|Mineral Dust"] = pr.area_mean(out["Land-use Change"])
     out["Black Carbon on Snow"] = pr.bc_on_snow(
         years, inputs["file_bcsnow_rf"], _total(emissions, "BC")
     )

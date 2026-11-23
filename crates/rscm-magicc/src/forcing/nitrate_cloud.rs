@@ -36,7 +36,7 @@ use rscm_core::component::{
 use rscm_core::errors::{RSCMError, RSCMResult};
 use rscm_core::names::{
     child, EMISSIONS_BC, EMISSIONS_NH3, EMISSIONS_NOX, EMISSIONS_OC, EMISSIONS_SOX,
-    ERF_AEROSOLS_DIRECT_EFFECT, ERF_AEROSOLS_INDIRECT_EFFECT, OPTICAL_THICKNESS,
+    ERF_AEROSOLS_INDIRECT_EFFECT, OPTICAL_THICKNESS,
 };
 use rscm_core::state::{FourBoxSlice, VariableSource};
 use rscm_core::timeseries::{FloatValue, Time};
@@ -149,9 +149,11 @@ fn emissions_unit(name: &str) -> &'static str {
     }
 }
 
-fn nitrate_name(sector: &str) -> String {
-    child(&child(ERF_AEROSOLS_DIRECT_EFFECT, "NO3"), sector)
-}
+/// Nitrate direct forcing in each of `EMISSION_SECTORS`.
+pub(crate) const NITRATE_SECTORS: [&str; 2] = [
+    "Effective Radiative Forcing|Aerosols|Direct Effect|NO3|Fossil",
+    "Effective Radiative Forcing|Aerosols|Direct Effect|NO3|Biosphere",
+];
 
 /// Nitrate direct and cloud albedo forcing from emissions and optical thicknesses.
 #[derive(Debug, Clone, Serialize, Deserialize, ComponentMetadata)]
@@ -475,11 +477,8 @@ impl Component for NitrateCloudForcing {
         definitions.extend(optical_thickness_species().map(|species| {
             VariableDefinition::four_box_input(&optical_thickness_name(species), "1")
         }));
-        for sector in EMISSION_SECTORS {
-            definitions.push(VariableDefinition::four_box_output(
-                &nitrate_name(sector),
-                "W/m^2",
-            ));
+        for name in NITRATE_SECTORS {
+            definitions.push(VariableDefinition::four_box_output(name, "W/m^2"));
         }
         definitions.push(VariableDefinition::four_box_output(
             ERF_AEROSOLS_INDIRECT_EFFECT,
@@ -521,11 +520,11 @@ impl Component for NitrateCloudForcing {
         };
         let forcing = self.forcing(&drivers, t_next)?;
         out.set(
-            &nitrate_name("Fossil"),
+            NITRATE_SECTORS[0],
             FourBoxSlice::from_array(forcing.nitrate_fossil),
         );
         out.set(
-            &nitrate_name("Biosphere"),
+            NITRATE_SECTORS[1],
             FourBoxSlice::from_array(forcing.nitrate_biosphere),
         );
         out.set(
@@ -542,6 +541,16 @@ const EMISSIONS_NOX_FOSSIL: &str = "Emissions|NOx|Fossil";
 mod tests {
     use super::*;
     use crate::parameters::{CloudAlbedoParameters, NitrateParameters};
+    use rscm_core::names::ERF_AEROSOLS_DIRECT_EFFECT;
+
+    #[test]
+    fn nitrate_sector_names_match() {
+        let nitrate = child(ERF_AEROSOLS_DIRECT_EFFECT, "NO3");
+        assert_eq!(
+            NITRATE_SECTORS,
+            EMISSION_SECTORS.map(|sector| child(&nitrate, sector))
+        );
+    }
 
     const FIRST: Time = 2000.0;
     const LAST: Time = 2010.0;

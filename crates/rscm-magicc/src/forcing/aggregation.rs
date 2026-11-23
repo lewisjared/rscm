@@ -547,6 +547,7 @@ fn prescribed_only(name: &str, source: VariableSource) -> RSCMResult<()> {
 /// Check the scaling fields each agent sets refer to agents and variables it can read.
 fn validate_scaling(parameters: &ForcingAggregationParameters) -> RSCMResult<()> {
     let agents = &parameters.agents;
+    let variables: Vec<&String> = agents.iter().flat_map(agent_inputs).collect();
     for agent in agents {
         let fail = |reason: &str| Err(RSCMError::Error(format!("{}: {reason}", agent.variable)));
         let single = agent.sum_of.is_empty();
@@ -564,7 +565,6 @@ fn validate_scaling(parameters: &ForcingAggregationParameters) -> RSCMResult<()>
         if names.is_empty() != agent.pattern_year.is_none() {
             return fail("pattern_terms and pattern_year need each other");
         }
-        let variables: Vec<&String> = agents.iter().flat_map(agent_inputs).collect();
         if let Some(name) = names.iter().find(|n| !variables.iter().any(|v| v == *n)) {
             return fail(&format!("pattern_terms names no agent variable {name}"));
         }
