@@ -4,18 +4,29 @@
 //!
 //! - `GHGForcing`: Well-mixed GHG forcing (CO2, CH4, N2O) with IPCCTAR/Etminan methods
 //! - `OzoneForcing`: Stratospheric and tropospheric ozone forcing
-//! - `AerosolDirect`: Direct aerosol radiative effects (SO2, BC, OC)
-//! - `AerosolIndirect`: Indirect aerosol effects (cloud-albedo)
+//! - `NitrateCloudForcing`: Nitrate direct and cloud albedo forcing as in MAGICC7
 //! - `ForcingAggregation`: Regional, efficacy-adjusted total forcing
 
-mod aerosol_direct;
-mod aerosol_indirect;
 mod aggregation;
 mod ghg;
+mod nitrate_cloud;
 mod ozone;
 
-pub use aerosol_direct::AerosolDirect;
-pub use aerosol_indirect::AerosolIndirect;
+use rscm_core::spatial::FourBoxRegion;
+
+/// The four boxes in storage order.
+pub(crate) const REGIONS: [FourBoxRegion; 4] = [
+    FourBoxRegion::NorthernOcean,
+    FourBoxRegion::NorthernLand,
+    FourBoxRegion::SouthernOcean,
+    FourBoxRegion::SouthernLand,
+];
+
 pub use aggregation::ForcingAggregation;
 pub use ghg::GHGForcing;
+pub(crate) use nitrate_cloud::NITRATE_SECTORS;
+pub use nitrate_cloud::{
+    optical_thickness_name, Drivers, EmissionsLookup, NitrateCloud, NitrateCloudForcing,
+    OpticalThicknessLookup,
+};
 pub use ozone::OzoneForcing;

@@ -17,15 +17,13 @@ use rscm_core::timeseries::FloatValue;
 use crate::carbon::{CO2Budget, OceanCarbon, Permafrost, TerrestrialCarbon};
 use crate::chemistry::{CH4Chemistry, CH4Oxidation, HalocarbonChemistry, N2OChemistry};
 use crate::climate::{ClimateUDEB, SeaLevelRise};
-use crate::forcing::{
-    AerosolDirect, AerosolIndirect, ForcingAggregation, GHGForcing, OzoneForcing,
-};
+use crate::forcing::{Drivers, ForcingAggregation, GHGForcing, NitrateCloudForcing, OzoneForcing};
 use crate::parameters::{
-    AerosolDirectParameters, AerosolIndirectParameters, CH4ChemistryParameters,
-    CH4OxidationParameters, CO2BudgetParameters, ClimateUDEBParameters,
+    CH4ChemistryParameters, CH4OxidationParameters, CO2BudgetParameters, ClimateUDEBParameters,
     ForcingAggregationParameters, GHGForcingParameters, HalocarbonChemistryParameters,
-    N2OChemistryParameters, OceanCarbonParameters, OzoneForcingParameters, PermafrostParameters,
-    SeaLevelRiseParameters, TerrestrialCarbonParameters,
+    N2OChemistryParameters, NitrateCloudForcingParameters, OceanCarbonParameters,
+    OzoneForcingParameters, PermafrostParameters, SeaLevelRiseParameters,
+    TerrestrialCarbonParameters,
 };
 
 // Climate components
@@ -258,12 +256,6 @@ impl GHGForcingBuilder {
     }
 }
 create_component_builder!(OzoneForcingBuilder, OzoneForcing, OzoneForcingParameters);
-create_component_builder!(AerosolDirectBuilder, AerosolDirect, AerosolDirectParameters);
-create_component_builder!(
-    AerosolIndirectBuilder,
-    AerosolIndirect,
-    AerosolIndirectParameters
-);
 
 /// Builder for `ForcingAggregation`, whose parameters are validated on build.
 #[pyclass]
@@ -279,39 +271,300 @@ impl ForcingAggregationBuilder {
             .map(|parameters| Self { parameters })
     }
 
-    /// Total effective radiative forcing and four-box efficacy-adjusted forcing.
+    /// Total effective radiative forcing and four-box efficacy-adjusted forcing
+    /// at the first of `time`.
     ///
-    /// Takes one value per agent.
-    pub fn aggregate(&self, values: Vec<Vec<f64>>) -> PyResult<(f64, [f64; 4])> {
+    /// Takes one value per agent variable, each `sum_of` variable in turn.
+    /// `inputs` holds the prescribed series of agent variables on `time`,
+    /// which harmonised and held agents read.
+    #[pyo3(signature = (values, inputs=None, time=None))]
+    pub fn aggregate(
+        &self,
+        values: Vec<Vec<f64>>,
+        inputs: Option<std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<f64>>>,
+        time: Option<Vec<f64>>,
+    ) -> PyResult<(f64, [f64; 4])> {
         let component = ForcingAggregation::from_parameters(self.parameters.clone())
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
-        let agents = &component.parameters().agents;
-        let valid = values.len() == agents.len()
-            && agents
-                .iter()
-                .zip(&values)
-                .all(|(agent, v)| v.len() == if agent.regional { 4 } else { 1 });
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let lengths: Vec<usize> = component
+            .parameters()
+            .agents
+            .iter()
+            .flat_map(|agent| {
+                let n = agent.sum_of.len().max(1);
+                std::iter::repeat_n(if agent.regional { 4 } else { 1 }, n)
+            })
+            .collect();
+        let valid = values.len() == lengths.len()
+            && lengths.iter().zip(&values).all(|(n, v)| v.len() == *n);
         if !valid {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Supply one value per global agent and four per regional agent",
+            return Err(PyValueError::new_err(
+                "Supply one value per global agent variable and four per regional one",
             ));
         }
-        Ok(component.aggregate(&values))
+        let series = SeriesLookup::new(inputs, time)?;
+        component
+            .aggregate(&values, &|name, _, t| series.at(name, t), series.first())
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    /// Scaled four-box ERF before efficacies of each agent variable in the prescribed `inputs`
+    /// on `time`, at each of `at`, which defaults to `time`.
+    #[pyo3(signature = (inputs, time, at=None))]
+    pub fn variable_box_forcing(
+        &self,
+        py: Python<'_>,
+        inputs: std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<f64>>,
+        time: Vec<f64>,
+        at: Option<Vec<f64>>,
+    ) -> PyResult<std::collections::HashMap<String, Py<PyAny>>> {
+        let component = ForcingAggregation::from_parameters(self.parameters.clone())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let at = at.unwrap_or_else(|| time.clone());
+        let series = SeriesLookup::new(Some(inputs), Some(time))?;
+        let forcing = component
+            .variable_box_forcing(
+                &|name, _, t| series.at(name, t),
+                &|name| series.series.contains_key(name),
+                &at,
+            )
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        forcing
+            .into_iter()
+            .map(|(name, boxes)| {
+                let array = numpy::PyArray2::from_vec2(
+                    py,
+                    &boxes.iter().map(|b| b.to_vec()).collect::<Vec<_>>(),
+                )?;
+                Ok((name, array.into_any().unbind()))
+            })
+            .collect()
+    }
+
+    /// Scale of each agent variable, keyed by variable, from the prescribed `inputs` on `time`.
+    #[pyo3(signature = (inputs=None, time=None))]
+    pub fn variable_scales(
+        &self,
+        inputs: Option<std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<f64>>>,
+        time: Option<Vec<f64>>,
+    ) -> PyResult<std::collections::HashMap<String, f64>> {
+        let component = ForcingAggregation::from_parameters(self.parameters.clone())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let series = SeriesLookup::new(inputs, time)?;
+        let scales = component
+            .variable_scales(&|name, _, t| series.at(name, t))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let names = component.parameters().agents.iter().flat_map(|agent| {
+            if agent.sum_of.is_empty() {
+                std::slice::from_ref(&agent.variable)
+            } else {
+                agent.sum_of.as_slice()
+            }
+        });
+        Ok(names.cloned().zip(scales).collect())
     }
 
     /// Internal efficacy of each agent at equilibrium climate sensitivity `ecs`
     /// and 2xCO2 effective radiative forcing `erf_2xco2`.
-    pub fn internal_efficacies(&self, ecs: f64, erf_2xco2: f64) -> PyResult<Vec<f64>> {
-        ForcingAggregation::from_parameters(self.parameters.clone())
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?
-            .internal_efficacies(ecs, erf_2xco2)
-            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("LAMCALC did not converge"))
+    ///
+    /// Agents with `pattern_terms` take their pattern from the prescribed `inputs` on `time`.
+    #[pyo3(signature = (ecs, erf_2xco2, inputs=None, time=None))]
+    pub fn internal_efficacies(
+        &self,
+        ecs: f64,
+        erf_2xco2: f64,
+        inputs: Option<std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<f64>>>,
+        time: Option<Vec<f64>>,
+    ) -> PyResult<Vec<f64>> {
+        let component = ForcingAggregation::from_parameters(self.parameters.clone())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let series = SeriesLookup::new(inputs, time)?;
+        component
+            .internal_efficacies_from(ecs, erf_2xco2, &|name, _, t| series.at(name, t))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?
+            .ok_or_else(|| PyValueError::new_err("LAMCALC did not converge"))
+    }
+
+    /// Pattern of each agent, from the prescribed `inputs` on `time` for agents with `pattern_terms`.
+    #[pyo3(signature = (inputs=None, time=None))]
+    pub fn patterns(
+        &self,
+        inputs: Option<std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<f64>>>,
+        time: Option<Vec<f64>>,
+    ) -> PyResult<Vec<[f64; 4]>> {
+        let component = ForcingAggregation::from_parameters(self.parameters.clone())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let series = SeriesLookup::new(inputs, time)?;
+        component
+            .patterns(&|name, _, t| series.at(name, t))
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     pub fn build(&self) -> PyResult<PyRustComponent> {
         ForcingAggregation::from_parameters(self.parameters.clone())
             .map(|component| PyRustComponent(std::sync::Arc::new(component)))
             .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+    }
+}
+
+/// Builder for `NitrateCloudForcing`, whose parameters are validated on build.
+#[pyclass]
+pub struct NitrateCloudForcingBuilder {
+    parameters: NitrateCloudForcingParameters,
+}
+
+impl NitrateCloudForcingBuilder {
+    fn with_drivers<T>(
+        &self,
+        inputs: std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<f64>>,
+        time: Vec<f64>,
+        f: impl FnOnce(&NitrateCloudForcing, &Drivers) -> rscm_core::errors::RSCMResult<T>,
+    ) -> PyResult<T> {
+        let component = NitrateCloudForcing::from_parameters(self.parameters.clone())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let (Some(&first), Some(&last)) = (time.first(), time.last()) else {
+            return Err(PyValueError::new_err("time needs at least one value"));
+        };
+        let series = SeriesLookup::new(Some(inputs), Some(time))?;
+        let emissions = |name: &str, t: f64| Ok(series.at(name, t)?[0]);
+        let optical_thickness = |name: &str, t: f64| {
+            let row = series.at(name, t)?;
+            <[f64; 4]>::try_from(row).map_err(|_| {
+                rscm_core::errors::RSCMError::Error(format!("{name} needs four boxes"))
+            })
+        };
+        let drivers = Drivers {
+            emissions: &emissions,
+            optical_thickness: &optical_thickness,
+            first,
+            last,
+        };
+        f(&component, &drivers).map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+}
+
+#[pymethods]
+impl NitrateCloudForcingBuilder {
+    #[staticmethod]
+    pub fn from_parameters(parameters: Bound<PyAny>) -> PyResult<Self> {
+        rscm_core::python::parameters::depythonize::<NitrateCloudForcingParameters>(&parameters)
+            .map(|parameters| Self { parameters })
+    }
+
+    /// Four-box forcing of each output in each year of `time`, from the prescribed `inputs` on it.
+    pub fn forcing(
+        &self,
+        py: Python<'_>,
+        inputs: std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<f64>>,
+        time: Vec<f64>,
+    ) -> PyResult<std::collections::HashMap<String, Py<PyAny>>> {
+        let years = time.clone();
+        let rows = self.with_drivers(inputs, time, |component, drivers| {
+            years
+                .iter()
+                .map(|&year| component.forcing(drivers, year))
+                .collect::<rscm_core::errors::RSCMResult<Vec<_>>>()
+        })?;
+        let column = |f: fn(&crate::forcing::NitrateCloud) -> [f64; 4]| {
+            numpy::PyArray2::from_vec2(py, &rows.iter().map(|r| f(r).to_vec()).collect::<Vec<_>>())
+                .map(|a| a.into_any().unbind())
+        };
+        Ok(std::collections::HashMap::from([
+            (
+                crate::forcing::NITRATE_SECTORS[0].to_string(),
+                column(|r| r.nitrate_fossil)?,
+            ),
+            (
+                crate::forcing::NITRATE_SECTORS[1].to_string(),
+                column(|r| r.nitrate_biosphere)?,
+            ),
+            (
+                rscm_core::names::ERF_AEROSOLS_INDIRECT_EFFECT.to_string(),
+                column(|r| r.cloud_albedo)?,
+            ),
+        ]))
+    }
+
+    /// Box nitrate forcing per unit global nitrate forcing in `year`,
+    /// from the prescribed `inputs` on `time`.
+    pub fn nitrate_pattern(
+        &self,
+        inputs: std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<f64>>,
+        time: Vec<f64>,
+        year: f64,
+    ) -> PyResult<[f64; 4]> {
+        self.with_drivers(inputs, time, |component, drivers| {
+            component.nitrate_pattern(drivers, year)
+        })
+    }
+
+    pub fn build(&self) -> PyResult<PyRustComponent> {
+        NitrateCloudForcing::from_parameters(self.parameters.clone())
+            .map(|component| PyRustComponent(std::sync::Arc::new(component)))
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+}
+
+/// Prescribed series by name on a time axis, read at any time as a model window reads them.
+struct SeriesLookup {
+    series: std::collections::HashMap<String, Vec<Vec<f64>>>,
+    time: Vec<f64>,
+}
+
+impl SeriesLookup {
+    fn new(
+        inputs: Option<std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<f64>>>,
+        time: Option<Vec<f64>>,
+    ) -> PyResult<Self> {
+        let time = time.unwrap_or_default();
+        let mut series = std::collections::HashMap::new();
+        for (name, array) in inputs.unwrap_or_default() {
+            let array = array.as_array();
+            if array.shape().first() != Some(&time.len()) || array.ndim() > 2 {
+                return Err(PyValueError::new_err(format!(
+                    "{name} needs one row per time, got shape {:?}",
+                    array.shape()
+                )));
+            }
+            let rows = array
+                .outer_iter()
+                .map(|row| row.iter().copied().collect())
+                .collect();
+            series.insert(name, rows);
+        }
+        Ok(Self { series, time })
+    }
+
+    fn first(&self) -> f64 {
+        self.time.first().copied().unwrap_or(f64::NAN)
+    }
+
+    /// Value at a node, held beyond the ends.
+    ///
+    /// Errors between nodes, because the model's interpolation is not repeated here.
+    fn at(&self, name: &str, t: f64) -> rscm_core::errors::RSCMResult<Vec<f64>> {
+        let rows = self.series.get(name).ok_or_else(|| {
+            rscm_core::errors::RSCMError::Error(format!("no prescribed series for {name}"))
+        })?;
+        let time = &self.time;
+        let Some(last) = time.len().checked_sub(1) else {
+            return Err(rscm_core::errors::RSCMError::Error(format!(
+                "{name} needs the time of its prescribed series"
+            )));
+        };
+        if t <= time[0] {
+            return Ok(rows[0].clone());
+        }
+        if t >= time[last] {
+            return Ok(rows[last].clone());
+        }
+        let i = time.partition_point(|&x| x <= t) - 1;
+        if time[i] == t {
+            return Ok(rows[i].clone());
+        }
+        Err(rscm_core::errors::RSCMError::Error(format!(
+            "{name} is read at {t}, between the times of its prescribed series"
+        )))
     }
 }
 
@@ -333,8 +586,7 @@ pub fn magicc(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Forcing
     m.add_class::<GHGForcingBuilder>()?;
     m.add_class::<OzoneForcingBuilder>()?;
-    m.add_class::<AerosolDirectBuilder>()?;
-    m.add_class::<AerosolIndirectBuilder>()?;
+    m.add_class::<NitrateCloudForcingBuilder>()?;
     m.add_class::<ForcingAggregationBuilder>()?;
     Ok(())
 }

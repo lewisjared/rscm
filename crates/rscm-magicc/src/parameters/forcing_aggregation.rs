@@ -62,6 +62,79 @@ pub struct ForcingAgent {
     /// unit: dimensionless
     #[serde(default = "one")]
     pub internal_efficacy: FloatValue,
+
+    /// Scale the ERF to a target change between two years instead of by `scale`
+    /// (MAGICC7 `RF_*_APPLY = 1`). Needs a prescribed `variable` and no `sum_of`.
+    #[serde(default)]
+    pub harmonisation: Option<Harmonisation>,
+
+    /// For each `sum_of` variable, the `variable` of the agent whose scale applies to it,
+    /// or an empty string for this agent's own, as MAGICC7 scales biomass aerosols by industrial factors.
+    #[serde(default)]
+    pub sum_of_scale_from: Vec<String>,
+
+    /// Pattern that spreads a global ERF over the regions in proportion to its area mean,
+    /// in place of `regional_pattern`, which then sets only the internal efficacy
+    /// (MAGICC7 `RF_REGIONS_DUST`).
+    ///
+    /// unit: dimensionless
+    #[serde(default)]
+    pub spreading_pattern: Option<[FloatValue; 4]>,
+
+    /// Hold the ERF at its value in this year afterwards (MAGICC7 `RF_*_CONSTANTAFTERYR`).
+    /// Needs a prescribed `variable`.
+    ///
+    /// unit: yr
+    #[serde(default)]
+    pub constant_after_year: Option<FloatValue>,
+
+    /// Subtract the scaled ERF in this year, which MAGICC7 does for black carbon on snow.
+    /// Needs a prescribed `variable`.
+    ///
+    /// unit: yr
+    #[serde(default)]
+    pub relative_to_year: Option<FloatValue>,
+
+    /// Agent variables whose scaled box ERF in `pattern_year`, summed as in `summation`,
+    /// replaces `regional_pattern` for the internal efficacy.
+    /// Empty keeps `regional_pattern`.
+    #[serde(default)]
+    pub pattern_terms: Vec<ForcingTerm>,
+
+    /// Year whose ERF sets the pattern from `pattern_terms` (MAGICC7 `RF_REGIONS_NORMYEAR`).
+    ///
+    /// unit: yr
+    #[serde(default)]
+    pub pattern_year: Option<FloatValue>,
+}
+
+/// Harmonisation of an agent's ERF to a target change since a pre-industrial year.
+///
+/// The scale is `target` over the change in the agent's global ERF
+/// from `preindustrial_reference_year` to `reference_year`, read from its prescribed input.
+#[rscm_core::params]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Harmonisation {
+    /// Global ERF change to harmonise to (MAGICC7 `RF_*_WM2`)
+    ///
+    /// unit: W/m^2
+    pub target: FloatValue,
+
+    /// Year of the target (MAGICC7 `RF_*_YR`)
+    ///
+    /// unit: yr
+    pub reference_year: FloatValue,
+
+    /// Year the change is measured from (MAGICC7 `RF_PREIND_REFERENCEYR`)
+    ///
+    /// unit: yr
+    #[serde(default = "preindustrial_reference_year")]
+    pub preindustrial_reference_year: FloatValue,
+}
+
+fn preindustrial_reference_year() -> FloatValue {
+    1750.0
 }
 
 /// Parameters for `ForcingAggregation`.
@@ -100,7 +173,8 @@ pub struct ForcingAggregationParameters {
     pub climate: Option<EfficacyClimate>,
 }
 
-/// An agent or a nested sum in `ForcingAggregationParameters::summation`.
+/// An agent or a nested sum in `ForcingAggregationParameters::summation`,
+/// or an agent variable in `ForcingAgent::pattern_terms`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ForcingTerm {

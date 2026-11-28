@@ -24,11 +24,16 @@ Four-box arrays follow the box order in [initialisation](module_00_initialisatio
 
 ## RSCM implementation
 
-- **Function**: `rscm.magicc.prescribed.cloud_albedo`, called by `rscm.magicc.full.prescribed_forcing`.
-- **Source**: `python/rscm/magicc/prescribed.py`.
+- **Component**: `NitrateCloudForcing`, which writes `Effective Radiative Forcing|Aerosols|Indirect Effect`.
+- **Source**: `crates/rscm-magicc/src/forcing/nitrate_cloud.rs`.
 - **Status**: Implemented for the cloud albedo effect.
   See the [status table](README.md#rscm-implementation-status).
-- **Tests**: `test_prescribed_forcing[Aerosols|Indirect Effect]` in `tests/regression/test_full_run.py`.
+- **Tests**: `test_prescribed_forcing[Aerosols|Indirect Effect]` and
+  `test_nitrate_cloud_follows_ar6_member_on_spec` in `tests/regression/test_full_run.py`.
+
+The component reads the emissions and the four-box optical thickness of each species
+(`Optical Thickness|BC|Fossil` and so on) in the years it needs, so they must be prescribed.
+`rscm.magicc.full.nitrate_cloud_parameters` translates the MAGICC7 parameters.
 
 `ForcingAggregation` takes the result as the four-box agent
 `Effective Radiative Forcing|Aerosols|Indirect Effect`.
@@ -132,7 +137,7 @@ The total cloud forcing is the sum of the two.
 | `SRF_FACTOR_CLOUD_COVER`        | 0.9                                  | Surface to top-of-atmosphere forcing ratio     |
 
 MAGICC7 renormalises the weights to sum to 1, and the defaults above are those normalised values.
-It sums them in order, so `rscm.magicc.prescribed.cloud_albedo` avoids Python's compensated `sum`.
+It sums them in order, and so does RSCM.
 With `RF_CLOUD_ALBEDO_AER_APPLY = 1`, `RF_CLOUD_ALBEDO_AER_FACTOR` is an output.
 With 2, the forcing is scaled by `RF_CLOUD_ALBEDO_AER_FACTOR` instead.
 The patterns come from Hansen et al. (2005).
@@ -154,14 +159,14 @@ The patterns come from Hansen et al. (2005).
 
 ## Numerical considerations
 
-RSCM uses `math.log10` to match MAGICC7's rounding.
+RSCM uses `f64::log10` to match MAGICC7's rounding.
 
 ## Issues in MAGICC7
 
 RSCM reproduces these unless the entry says otherwise.
 
 - **Normalisation years differ by species**: each group is normalised in the last year of its own data.
-  NO3 uses the end of the historical NOx emissions, 2014 by default in `cloud_albedo`.
+  NO3 uses the end of the historical NOx emissions, 2014 by default (`switch_years.nitrate`).
 - **Forward emission sums**: future indices follow each year's emissions plus the next year's.
   The final year repeats the one before.
   MAGICC7 adds natural SOx to SOXNB in a different order in the two sums, which RSCM copies.
@@ -177,9 +182,6 @@ RSCM reproduces these unless the entry says otherwise.
 - **Not in RSCM**: the cloud cover effect (zero by default), the forcing cap `CLOUD_APPLY_LIMIT_MAX`,
   `RF_AER_CONSTANTAFTERYR`, surface forcing and the sector mode.
   In the sector mode MAGICC7 runs the calculation twice and keeps the normalisation of the first run.
-- **Rust component**: `AerosolIndirect` (`crates/rscm-magicc/src/forcing/aerosol_indirect.rs`)
-  is a simplified, global version with no MAGICC7 parity test, and the MAGICC models do not use it.
-  It uses $\ln(1 + B/B_0)$ of SOx and OC emissions, with no regional pattern or optical thickness.
 
 ## References
 

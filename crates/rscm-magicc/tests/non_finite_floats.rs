@@ -5,10 +5,8 @@ use rscm_core::non_finite::testing::{assert_components_round_trip, CORE_COMPONEN
 use rscm_magicc::carbon::{CO2Budget, OceanCarbon, Permafrost, TerrestrialCarbon};
 use rscm_magicc::chemistry::{CH4Chemistry, CH4Oxidation, HalocarbonChemistry, N2OChemistry};
 use rscm_magicc::climate::{ClimateUDEB, SeaLevelRise};
-use rscm_magicc::forcing::{
-    AerosolDirect, AerosolIndirect, ForcingAggregation, GHGForcing, OzoneForcing,
-};
-use rscm_magicc::parameters::ForcingAggregationParameters;
+use rscm_magicc::forcing::{ForcingAggregation, GHGForcing, NitrateCloudForcing, OzoneForcing};
+use rscm_magicc::parameters::{ForcingAggregationParameters, NitrateCloudForcingParameters};
 
 #[test]
 fn every_component_keeps_non_finite_floats() {
@@ -23,13 +21,14 @@ fn every_component_keeps_non_finite_floats() {
         Box::new(N2OChemistry::default()),
         Box::new(ClimateUDEB::default()),
         Box::new(SeaLevelRise::default()),
-        Box::new(AerosolDirect::default()),
-        Box::new(AerosolIndirect::default()),
         Box::new(
             ForcingAggregation::from_parameters(ForcingAggregationParameters::default()).unwrap(),
         ),
         Box::new(GHGForcing::default()),
         Box::new(OzoneForcing::default()),
+        Box::new(
+            NitrateCloudForcing::from_parameters(NitrateCloudForcingParameters::default()).unwrap(),
+        ),
     ];
     let upstream = [
         &CORE_COMPONENT_TYPES[..],

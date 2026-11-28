@@ -27,6 +27,7 @@ from rscm.interop import REGIONS
 from rscm.magicc import (
     ForcingAggregationBuilder,
     HalocarbonChemistryBuilder,
+    NitrateCloudForcingBuilder,
     concentration_driven,
     emissions_driven,
     full,
@@ -48,8 +49,6 @@ from rscm.names import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from numpy.typing import NDArray
 
     from rscm.core import Model
@@ -271,19 +270,57 @@ def emissions(run: FullRun) -> dict[str, NDArray[np.float64]]:
 PRESCRIBED = (*full.PRESCRIBED_AGENTS, *full.BIOMASS_AGENTS)
 
 
+Series = dict[str, "NDArray[np.float64]"]
+
+
+def _nitrate_cloud(run: FullRun) -> tuple[NitrateCloudForcingBuilder, dict[str, Any]]:
+    """NitrateCloudForcing of a run, and its inputs on the run's years."""
+    p = run.parameters
+    files = full.load_inputs(p)
+    builder = NitrateCloudForcingBuilder.from_parameters(
+        full.nitrate_cloud_parameters(p, files)
+    )
+    inputs = full.nitrate_cloud_inputs(run.years, magicc7_emissions(run), files)
+    return builder, {name: values for name, (values, _) in inputs.items()}
+
+
+def _nitrate_pattern(run: FullRun) -> list[float]:
+    builder, inputs = _nitrate_cloud(run)
+    year = float(run.parameters["rf_regions_normyear"])
+    return list(builder.nitrate_pattern(inputs, list(run.years), year))
+
+
+def _scaled(run: FullRun) -> tuple[Series, Series, dict[str, float]]:
+    """Unscaled prescribed ERF, its scaled boxes and each agent variable's scale.
+
+    The boxes include the forcing `NitrateCloudForcing` calculates.
+    """
+    p, y = run.parameters, run.years
+    em = magicc7_emissions(run)
+    unscaled = full.prescribed_forcing(y, em, p, full.load_inputs(p))
+    agents = full.forcing_agents(p, y, unscaled, em)
+    aggregation = ForcingAggregationBuilder.from_parameters({"agents": agents})
+    inputs = {f"{ERF}|{name}": np.asarray(v) for name, v in unscaled.items()}
+    boxes = aggregation.variable_box_forcing(inputs, list(y))
+    scales = aggregation.variable_scales(inputs, list(y))
+
+    builder, nitrate_cloud = _nitrate_cloud(run)
+    boxes |= builder.forcing(nitrate_cloud, list(y))
+
+    def strip(name: str) -> str:
+        return name.removeprefix(f"{ERF}|")
+
+    return (
+        unscaled,
+        {strip(k): v for k, v in boxes.items()},
+        {strip(k): v for k, v in scales.items()},
+    )
+
+
 @cache
 def prescribed_forcing() -> dict[str, NDArray[np.float64]]:
-    """Four-box ERF of every agent MAGICC7 calculates before the run."""
-    run = load()
-    out = full.prescribed_forcing(
-        run.years,
-        magicc7_emissions(run),
-        run.parameters,
-        full.load_inputs(run.parameters),
-    )
-    # ForcingAggregation scales solar forcing.
-    out["Solar"] = out["Solar"] * run.parameters["rf_solar_scale"]
-    return out
+    """Scaled four-box ERF of every agent MAGICC7 calculates before the run."""
+    return _scaled(load())[1]
 
 
 def climate_parameters(run: FullRun) -> dict[str, Any]:
@@ -300,69 +337,36 @@ def _sum(terms: list[NDArray[np.float64]]) -> NDArray[np.float64]:
     return total
 
 
-def _factor(p: dict[str, Any], key: str, change: Callable[[float], float]) -> float:
-    """Scale of a prescribed agent, from ``change`` in a year when harmonised."""
-    scaling = full._scaling(p, key)
-    if "factor" in scaling:
-        return float(scaling["factor"])
-    target = scaling["harmonisation_target"]
-    return float(target / change(scaling["harmonisation_reference_year"]))
-
-
 def prescribed_global_forcing(run: FullRun) -> dict[str, NDArray[np.float64]]:
     """Global ERF of each prescribed agent as MAGICC7 reports it.
 
-    MAGICC7 scales the global of a harmonised agent's unscaled boxes,
+    MAGICC7 scales the global of a scaled agent's unscaled boxes,
     rather than taking the global of its scaled boxes.
     """
     p, y = run.parameters, run.years
-    files = full.load_inputs(p)
-    em = magicc7_emissions(run)
-    boxes = full.prescribed_forcing(y, em, p, files)
+    unscaled, boxes, scales = _scaled(run)
     out = {
         name: pr.area_mean(boxes[name])
         for name in (f"{DIRECT}|NO3|{sector}" for sector in SECTORS)
     }
     indirect = "Aerosols|Indirect Effect"
     out[indirect] = pr.area_mean(boxes[indirect])
-    out["Solar"] = boxes["Solar"][:, 0] * p["rf_solar_scale"]
-
-    def change(raw: NDArray[np.float64]) -> Callable[[float], float]:
-        def at(year: float) -> float:
-            i = pr._switch_index(y, year)
-            return float(pr.area_mean(raw[i]) - pr.area_mean(raw[0]))
-
-        return at
-
+    out["Solar"] = boxes["Solar"][:, 0]
     for species in ("SOx", "BC", "OC"):
-        code = species.lower()
-        industrial = files[f"file_{code}i_rf"]
-        fossil = em[f"{species}|Fossil"]
-        raw = pr._extend(industrial, y, fossil - fossil[0])
-        unscaled = pr.direct_aerosol(
-            y,
-            industrial,
-            files[f"file_{code}b_rf"],
-            fossil,
-            em[f"{species}|Biosphere"],
-            factor=1.0,
-        )
-        factor = _factor(p, f"{code}i_dir", change(raw))
-        for sector, values in zip(SECTORS, unscaled, strict=True):
-            out[f"{DIRECT}|{species}|{sector}"] = pr.area_mean(values) * factor
-    raw = pr._extend(files["file_bcsnow_rf"], y, em["BC|Fossil"] + em["BC|Biosphere"])
-    factor = _factor(p, "bcsnow_albedo", change(raw))
-    snow = pr.area_mean(raw)
-    out["Black Carbon on Snow"] = snow * factor - snow[0] * factor
-    land_use = files["file_landuse_rf"]
-    raw = pr._extend(land_use, y, np.cumsum(em["CO2|Biosphere"]), before=0.0)
-    factor = _factor(p, "landuse_albedo", change(raw))
-    hold = pr._hold_after(pr.area_mean(raw), y, p["rf_landuse_constantafteryr"])
-    out["Land-use Change"] = hold * factor
-    dust = pr.area_mean(raw)
-    factor = _factor(p, "mineraldust_dir", change(raw))
-    out[f"{DIRECT}|Mineral Dust"] = pr._hold_after(
-        dust * factor, y, p["rf_mineraldust_constantafteryr"]
+        for sector in SECTORS:
+            name = f"{DIRECT}|{species}|{sector}"
+            out[name] = pr.area_mean(unscaled[name]) * scales[name]
+    snow = "Black Carbon on Snow"
+    raw = pr.area_mean(unscaled[snow])
+    out[snow] = raw * scales[snow] - raw[0] * scales[snow]
+    land_use = "Land-use Change"
+    hold = pr._hold_after(
+        pr.area_mean(unscaled[land_use]), y, p["rf_landuse_constantafteryr"]
+    )
+    out[land_use] = hold * scales[land_use]
+    dust = f"{DIRECT}|Mineral Dust"
+    out[dust] = pr._hold_after(
+        unscaled[dust] * scales[dust], y, p["rf_mineraldust_constantafteryr"]
     )
     return out
 
@@ -381,11 +385,31 @@ class Reported:
         p = run.parameters
         climate = climate_parameters(run)
         em = magicc7_emissions(run)
-        prescribed = full.prescribed_forcing(run.years, em, p, full.load_inputs(p))
-        agents = full.forcing_agents(p, run.years, prescribed, em)
+        unscaled = full.prescribed_forcing(run.years, em, p, full.load_inputs(p))
+        agents = full.forcing_agents(p, run.years, unscaled, em)
+        erf = {f"{ERF}|{name}": np.asarray(v) for name, v in unscaled.items()}
+        patterns = ForcingAggregationBuilder.from_parameters(
+            {"agents": agents}
+        ).patterns(erf, list(run.years))
+        nitrate = f"{ERF}|{DIRECT}|NO3|Fossil"
+        patterns = [
+            _nitrate_pattern(run) if a["variable"] == nitrate else pattern
+            for a, pattern in zip(agents, patterns, strict=True)
+        ]
+        fixed = [
+            {
+                **{
+                    k: v
+                    for k, v in a.items()
+                    if k not in ("pattern_terms", "pattern_year")
+                },
+                "regional_pattern": pattern,
+            }
+            for a, pattern in zip(agents, patterns, strict=True)
+        ]
         aggregation = ForcingAggregationBuilder.from_parameters(
             {
-                "agents": agents,
+                "agents": fixed,
                 "efficacy_method": full.EFFICACY_METHODS[p["rf_efficacy_apply"]],
                 "climate": full.efficacy_climate(climate),
             }

@@ -29,10 +29,10 @@ Carbon Cycle:
 Forcing:
 
 - OzoneForcingBuilder: Stratospheric and tropospheric ozone forcing
-- AerosolDirectBuilder: Direct aerosol radiative effects
-- AerosolIndirectBuilder: Indirect aerosol cloud effects
+- NitrateCloudForcingBuilder: Nitrate direct and cloud albedo forcing
 """
 
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal, NotRequired, Required, TypedDict, final
 
 import numpy as np
@@ -991,146 +991,102 @@ class OzoneForcingBuilder(ComponentBuilder):
     def build(self) -> RustComponent:
         """Build the ozone forcing component."""
 
-class AerosolDirectParameters(TypedDict, total=False):
-    """Parameters for direct aerosol forcing component.
+class ForcingTarget(TypedDict):
+    """Global forcing that a forcing is scaled to in a year."""
+
+    target: float
+    """Global forcing in ``reference_year``, in W/m²."""
+    reference_year: float
+
+class CloudSpecies(TypedDict):
+    """A value for each species of the aerosol number index."""
+
+    nitrate: float
+    bc: float
+    oc: float
+    sox: float
+    sea_salt: float
+
+class NitrateParameters(TypedDict, total=False):
+    """Nitrate direct forcing (Hauglustaine et al. 2014)."""
+
+    natural_nox_emissions: float
+    natural_nh3_emissions: float
+    lambda_so2: float
+    burden_pi: float
+    optical_thickness_pi: float
+    burden_to_optical_thickness_exponent: float
+    regional_pattern: list[float]
+    efficacy_pattern_year: float | None
+    """Year whose forcing sets nitrate's pattern for its internal efficacy.
+
+    The model setup applies it to the ``ForcingAggregation`` nitrate agent.
+    """
+    scale: float
+    harmonisation: ForcingTarget | None
+    """Global forcing in a year that sets the factor instead of ``scale``."""
+
+class CloudAlbedoParameters(TypedDict, total=False):
+    """Cloud albedo forcing from a log-linear aerosol number index."""
+
+    weights: CloudSpecies
+    switch_years: CloudSpecies
+    """Years from which each species follows emissions, when its records end."""
+    bci_soluble_ratio: float
+    regional_pattern: list[float]
+    pattern_year: float
+    """Year in which the forcing equals ``regional_pattern``, before the factor."""
+    scale: float
+    harmonisation: ForcingTarget | None
+    """Global forcing in a year that sets the factor instead of ``scale``."""
+
+class NitrateCloudForcingParameters(TypedDict, total=False):
+    """Parameters for the nitrate and cloud albedo forcing component.
 
     All fields optional - defaults provided by Rust.
     """
 
-    sox_coefficient: float
-    bc_coefficient: float
-    oc_coefficient: float
-    nitrate_coefficient: float
-    sox_regional: list[float]
-    bc_regional: list[float]
-    oc_regional: list[float]
-    nitrate_regional: list[float]
-    sox_pi: float
-    bc_pi: float
-    oc_pi: float
-    nox_pi: float
-    include_harmonisation: bool
-    harmonisation_reference_year: float
-    harmonisation_target: float
+    nitrate: NitrateParameters
+    cloud_albedo: CloudAlbedoParameters
+    natural_sox_emissions: float
+    nh_land_fraction: float
+    sh_land_fraction: float
 
 @final
-class AerosolDirectBuilder(ComponentBuilder):
-    """Builder for the direct aerosol forcing component.
+class NitrateCloudForcingBuilder(ComponentBuilder):
+    """Builder for MAGICC7's nitrate direct and cloud albedo forcing.
 
-    Calculates direct aerosol radiative forcing as a linear combination of emissions
-    from SOx, BC, OC, and nitrate, with optional regional distribution.
-
-    **Parameter keys**
-
-    - `sox_coefficient` (`float`, default `-0.0035`): SOx forcing coefficient (W/m^2/(Tg
-      S/yr)).
-    - `bc_coefficient` (`float`, default `0.0077`): BC forcing coefficient (W/m^2/(Tg
-      BC/yr)).
-    - `oc_coefficient` (`float`, default `-0.002`): OC forcing coefficient (W/m^2/(Tg
-      OC/yr)).
-    - `nitrate_coefficient` (`float`, default `-0.001`): Nitrate forcing coefficient
-      (W/m^2/(Tg N/yr)).
-    - `sox_regional` (`list[float]`, default `[0.15, 0.55, 0.10, 0.20]`): SOx regional
-      distribution (length 4).
-    - `bc_regional` (`list[float]`, default `[0.15, 0.50, 0.15, 0.20]`): BC regional
-      distribution weights (length 4).
-    - `oc_regional` (`list[float]`, default `[0.15, 0.45, 0.15, 0.25]`): OC regional
-      distribution weights (length 4).
-    - `nitrate_regional` (`list[float]`, default `[0.15, 0.50, 0.15, 0.20]`): Nitrate
-      regional distribution (length 4).
-    - `sox_pi` (`float`, default `1.0`): Pre-industrial SOx emissions (Tg S/yr).
-    - `bc_pi` (`float`, default `2.5`): Pre-industrial BC emissions (Tg BC/yr).
-    - `oc_pi` (`float`, default `10.0`): Pre-industrial OC emissions (Tg OC/yr).
-    - `nox_pi` (`float`, default `10.0`): Pre-industrial NOx emissions (Tg N/yr).
-    - `include_harmonisation` (`bool`, default `False`): Enable harmonisation to
-      reference year.
-    - `harmonisation_reference_year` (`float`, default `2019.0`): Reference year for
-      harmonisation.
-    - `harmonisation_target` (`float`, default `-0.22`): Target forcing at reference
-      year (W/m^2).
+    Both are closed-form in emissions and optical thicknesses,
+    which it reads in reference years, so they must be prescribed.
 
     Inputs, outputs and states are listed on the
-    [AerosolDirect component page][component-magicc-aerosoldirect].
-
-    Examples
-    --------
-    >>> builder = AerosolDirectBuilder.from_parameters(
-    ...     {
-    ...         "sox_coefficient": -0.0035,
-    ...         "bc_coefficient": 0.0077,
-    ...         "include_harmonisation": False,
-    ...     }
-    ... )
-    >>> component = builder.build()
-    """
-
-    @staticmethod
-    def from_parameters(parameters: AerosolDirectParameters) -> AerosolDirectBuilder:  # type: ignore[override]
-        """Create a builder from a parameter dictionary."""
-    def build(self) -> RustComponent:
-        """Build the direct aerosol forcing component."""
-
-class AerosolIndirectParameters(TypedDict, total=False):
-    """Parameters for indirect aerosol forcing component.
-
-    All fields optional - defaults provided by Rust.
-    """
-
-    cloud_albedo_coefficient: float
-    reference_burden: float
-    sox_weight: float
-    oc_weight: float
-    sox_pi: float
-    oc_pi: float
-    include_harmonisation: bool
-    harmonisation_reference_year: float
-    harmonisation_target: float
-
-@final
-class AerosolIndirectBuilder(ComponentBuilder):
-    """Builder for the indirect aerosol forcing component.
-
-    Calculates indirect aerosol forcing (cloud albedo effect) using a logarithmic
-    relationship with aerosol burden.
-
-    **Parameter keys**
-
-    - `cloud_albedo_coefficient` (`float`, default `-1.0`): Cloud albedo effect
-      coefficient (W/m^2/ln-unit).
-    - `reference_burden` (`float`, default `50.0`): Reference aerosol burden (Tg/yr).
-    - `sox_weight` (`float`, default `1.0`): SOx weight in aerosol burden.
-    - `oc_weight` (`float`, default `0.3`): OC weight in aerosol burden.
-    - `sox_pi` (`float`, default `1.0`): Pre-industrial SOx emissions (Tg S/yr).
-    - `oc_pi` (`float`, default `10.0`): Pre-industrial OC emissions (Tg OC/yr).
-    - `include_harmonisation` (`bool`, default `False`): Enable harmonisation to
-      reference year.
-    - `harmonisation_reference_year` (`float`, default `2019.0`): Reference year for
-      harmonisation.
-    - `harmonisation_target` (`float`, default `-0.89`): Target forcing at reference
-      year (W/m^2).
-
-    Inputs, outputs and states are listed on the
-    [AerosolIndirect component page][component-magicc-aerosolindirect].
-
-    Examples
-    --------
-    >>> builder = AerosolIndirectBuilder.from_parameters(
-    ...     {
-    ...         "cloud_albedo_coefficient": -1.0,
-    ...         "reference_burden": 50.0,
-    ...         "include_harmonisation": False,
-    ...     }
-    ... )
-    >>> component = builder.build()
+    [NitrateCloudForcing component page][component-magicc-nitratecloudforcing].
     """
 
     @staticmethod
     def from_parameters(  # type: ignore[override]
-        parameters: AerosolIndirectParameters,
-    ) -> AerosolIndirectBuilder:
+        parameters: NitrateCloudForcingParameters,
+    ) -> NitrateCloudForcingBuilder:
         """Create a builder from a parameter dictionary."""
+    def forcing(
+        self, inputs: Mapping[str, NDArray[np.float64]], time: Sequence[float]
+    ) -> dict[str, NDArray[np.float64]]:
+        """Return the four-box forcing of each output in each year of ``time``.
+
+        ``inputs`` holds the prescribed series on ``time``.
+        """
+    def nitrate_pattern(
+        self,
+        inputs: Mapping[str, NDArray[np.float64]],
+        time: Sequence[float],
+        year: float,
+    ) -> tuple[float, float, float, float]:
+        """Return box nitrate forcing per unit global nitrate forcing in ``year``.
+
+        ``inputs`` holds the prescribed series on ``time``.
+        """
     def build(self) -> RustComponent:
-        """Build the indirect aerosol forcing component."""
+        """Build the nitrate and cloud albedo forcing component."""
 
 # GHG Forcing
 
@@ -1246,6 +1202,27 @@ class ForcingAgent(TypedDict, total=False):
 
     MAGICC7 does this for halocarbons.
     """
+    harmonisation: Harmonisation
+    """Scale the ERF to a target change, in place of ``scale``."""
+    sum_of_scale_from: list[str]
+    """Agent whose scale each ``sum_of`` variable takes, or empty for this agent's."""
+    spreading_pattern: tuple[float, float, float, float]
+    """Pattern spreading a global ERF over the boxes, not ``regional_pattern``."""
+    constant_after_year: float
+    """Hold the ERF at its value in this year afterwards."""
+    relative_to_year: float
+    """Subtract the scaled ERF in this year."""
+    pattern_terms: list[ForcingTerm]
+    """Variables whose box ERF in ``pattern_year`` replaces ``regional_pattern``."""
+    pattern_year: float
+
+class Harmonisation(TypedDict, total=False):
+    """Harmonisation of an agent's ERF to a target change since pre-industrial."""
+
+    target: Required[float]
+    """Global ERF change to harmonise to, in W/m²."""
+    reference_year: Required[float]
+    preindustrial_reference_year: float
 
 type ForcingCategory = Literal["greenhouse_gas", "aerosol", "anthropogenic", "natural"]
 """Which of the greenhouse gas, aerosol and anthropogenic ERF an agent counts towards.
@@ -1304,17 +1281,59 @@ class ForcingAggregationBuilder(ComponentBuilder):
     ) -> ForcingAggregationBuilder:
         """Create a builder from a parameter dictionary."""
     def aggregate(
-        self, values: list[list[float]]
+        self,
+        values: list[list[float]],
+        inputs: Mapping[str, NDArray[np.float64]] | None = None,
+        time: Sequence[float] | None = None,
     ) -> tuple[float, tuple[float, float, float, float]]:
         """Return total effective radiative forcing and box forcing.
 
-        Takes each agent's value or box values.
+        Both are at the first of ``time``.
+
+        Takes the value or box values of each agent variable,
+        each ``sum_of`` variable in turn.
+        ``inputs`` holds the prescribed series of agent variables on ``time``,
+        which harmonised, held and relative agents read.
         """
-    def internal_efficacies(self, ecs: float, erf_2xco2: float) -> list[float]:
+    def variable_scales(
+        self,
+        inputs: Mapping[str, NDArray[np.float64]] | None = None,
+        time: Sequence[float] | None = None,
+    ) -> dict[str, float]:
+        """Return the scale of each agent variable from ``inputs`` on ``time``."""
+    def variable_box_forcing(
+        self,
+        inputs: Mapping[str, NDArray[np.float64]],
+        time: Sequence[float],
+        at: Sequence[float] | None = None,
+    ) -> dict[str, NDArray[np.float64]]:
+        """Return the scaled box ERF before efficacies of each variable in ``inputs``.
+
+        ``inputs`` are on ``time``, and the result has a row for each of ``at``,
+        which defaults to ``time``.
+        """
+    def internal_efficacies(
+        self,
+        ecs: float,
+        erf_2xco2: float,
+        inputs: Mapping[str, NDArray[np.float64]] | None = None,
+        time: Sequence[float] | None = None,
+    ) -> list[float]:
         """Return each agent's internal efficacy at climate sensitivity ``ecs``.
 
         ``erf_2xco2`` is the 2xCO2 effective radiative forcing in W/m².
         Without ``climate`` these are the agents' own ``internal_efficacy``.
+        Agents with ``pattern_terms`` read the prescribed ``inputs`` on ``time``.
+        """
+    def patterns(
+        self,
+        inputs: Mapping[str, NDArray[np.float64]] | None = None,
+        time: Sequence[float] | None = None,
+    ) -> list[tuple[float, float, float, float]]:
+        """Return each agent's pattern.
+
+        Agents with ``pattern_terms`` take it from the prescribed ``inputs``
+        on ``time``.
         """
     def build(self) -> RustComponent:
         """Build the forcing aggregation component."""

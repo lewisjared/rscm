@@ -17,14 +17,17 @@ import pytest
 from regression import full_run
 from rscm._lib.magicc import (
     ClimateUDEBBuilder,
+    ForcingAggregationBuilder,
     GHGForcingBuilder,
     HalocarbonChemistryBuilder,
+    NitrateCloudForcingBuilder,
     OzoneForcingBuilder,
     PermafrostBuilder,
 )
 from rscm.core import VariableRole
 from rscm.interop import from_inputs
 from rscm.magicc import emissions_driven, full
+from rscm.magicc import model as magicc_model
 from rscm.magicc import prescribed as pr
 from rscm.names import (
     EFFICACY_ADJUSTED_ERF,
@@ -556,3 +559,238 @@ def test_from_magicc7_zero_nitrate_factor():
         SURFACE_AIR_TEMPERATURE_CHANGE
     )
     assert np.isfinite(temperature.values()[:-1]).all()
+
+
+def _magicc7(parameters):
+    run = full_run.load_default()
+    return full.from_magicc7(
+        run.time_axis,
+        full_run.magicc7_emissions(run),
+        parameters={**run.parameters, **parameters},
+        convention=Convention.MAGICC7,
+    )
+
+
+def _box_forcing(config, inputs):
+    agents = config["components"]["ForcingAggregation"]["agents"]
+    time = full_run.load_default().years
+    erf = {k: v for k, (v, _) in inputs.items() if k.startswith(ERF)}
+    return ForcingAggregationBuilder.from_parameters(
+        {"agents": agents}
+    ).variable_box_forcing(erf, list(time))
+
+
+@pytest.mark.parametrize(
+    ("parameters", "agent", "fields"),
+    [
+        (
+            {"rf_soxi_dir_wm2": -0.5},
+            "Aerosols|Direct Effect|SOx|Fossil",
+            {"harmonisation": {"target": -0.5}},
+        ),
+        (
+            {"rf_landuse_albedo_apply": 2, "rf_landuse_albedo_factor": 0.7},
+            "Land-use Change",
+            {"harmonisation": None, "scale": 0.7},
+        ),
+        (
+            {"rf_bcsnow_albedo_yr": 2000},
+            "Black Carbon on Snow",
+            {"harmonisation": {"reference_year": 2000.0}},
+        ),
+        (
+            {"rf_regions_dust": [1.0, 2.0, 3.0, 4.0]},
+            "Aerosols|Direct Effect|Mineral Dust",
+            {"spreading_pattern": [1.0, 2.0, 3.0, 4.0]},
+        ),
+        (
+            {"rf_mineraldust_constantafteryr": 1990},
+            "Aerosols|Direct Effect|Mineral Dust",
+            {"constant_after_year": 1990.0},
+        ),
+    ],
+)
+def test_direct_aerosol_scaling_follows_spec(parameters, agent, fields):
+    """Changing a scaling on the spec matches rebuilding with the MAGICC7 parameter.
+
+    The prescribed ERF inputs are unscaled, so they do not change.
+    """
+    config, inputs = _magicc7({})
+    expected_config, expected_inputs = _magicc7(parameters)
+    for name, (values, _) in expected_inputs.items():
+        if name.startswith(ERF):
+            npt.assert_array_equal(values, inputs[name][0], err_msg=name)
+
+    for a in config["components"]["ForcingAggregation"]["agents"]:
+        if a["variable"] == f"{ERF}|{agent}":
+            for key, value in fields.items():
+                if isinstance(value, dict):
+                    a[key] = {**a[key], **value}
+                elif value is None:
+                    a.pop(key)
+                else:
+                    a[key] = value
+
+    actual = _box_forcing(config, inputs)
+    expected = _box_forcing(expected_config, expected_inputs)
+    for name, values in expected.items():
+        npt.assert_array_equal(actual[name], values, err_msg=name)
+
+
+@pytest.mark.parametrize(
+    ("parameters", "agent", "fields"),
+    [
+        (
+            {"rf_bci_dir_wm2": 0.4},
+            "Aerosols|Direct Effect|BC|Fossil",
+            {"harmonisation": {"target": 0.4}},
+        ),
+        (
+            {"rf_landuse_albedo_yr": 2000},
+            "Land-use Change",
+            {"harmonisation": {"reference_year": 2000.0}},
+        ),
+    ],
+)
+def test_model_follows_direct_aerosol_scaling_on_spec(parameters, agent, fields):
+    """A model with a scaling changed on its spec runs as if rebuilt from MAGICC7.
+
+    The scaled forcing and the regional patterns taken from it both follow the spec.
+    """
+    run = full_run.load_default()
+    config, inputs = _magicc7({})
+    expected_config, expected_inputs = _magicc7(parameters)
+    for a in config["components"]["ForcingAggregation"]["agents"]:
+        if a["variable"] == f"{ERF}|{agent}":
+            for key, value in fields.items():
+                a[key] = {**a[key], **value}
+
+    def temperature(config, inputs):
+        model = emissions_driven.setup_model(config, inputs, run.time_axis).run()
+        boxes = model.timeseries().get_four_box_timeseries_by_name(
+            SURFACE_AIR_TEMPERATURE_CHANGE
+        )
+        return boxes.values()
+
+    expected = temperature(expected_config, expected_inputs)
+    npt.assert_array_equal(temperature(config, inputs), expected)
+    assert not np.array_equal(expected, temperature(*_magicc7({})))
+
+
+NITRATE_CLOUD_FIELDS = {
+    "sox_natural_emissions": ("natural_sox_emissions",),
+    "rf_noxn_emis": ("nitrate", "natural_nox_emissions"),
+    "rf_nh3n_emis": ("nitrate", "natural_nh3_emissions"),
+    "rf_no3_lambdaso2": ("nitrate", "lambda_so2"),
+    "rf_no3_preindburden": ("nitrate", "burden_pi"),
+    "rf_no3_preindot": ("nitrate", "optical_thickness_pi"),
+    "rf_no3_burden2ot_exp": ("nitrate", "burden_to_optical_thickness_exponent"),
+    "rf_regions_no3": ("nitrate", "regional_pattern"),
+    "rf_no3t_dir_factor": ("nitrate", "scale"),
+    "cloud_weight_no3": ("cloud_albedo", "weights", "nitrate"),
+    "cloud_weight_bc": ("cloud_albedo", "weights", "bc"),
+    "cloud_weight_oc": ("cloud_albedo", "weights", "oc"),
+    "cloud_weight_sox": ("cloud_albedo", "weights", "sox"),
+    "cloud_weight_ss": ("cloud_albedo", "weights", "sea_salt"),
+    "cloud_bci2bcb_soluble_ratio": ("cloud_albedo", "bci_soluble_ratio"),
+    "rf_regions_cloud_albedo": ("cloud_albedo", "regional_pattern"),
+    "rf_cloud_albedo_aer_factor": ("cloud_albedo", "scale"),
+}
+"""Spec field of each MAGICC7 nitrate and cloud parameter the AR6 ensemble varies."""
+
+
+def _nitrate_cloud(config, inputs, time):
+    """NitrateCloudForcing outputs and the nitrate agent's pattern after setup."""
+    parameters = config["components"]["NitrateCloudForcing"]
+    builder = NitrateCloudForcingBuilder.from_parameters(parameters)
+    names = [
+        d.name for d in builder.build().definitions() if d.role == VariableRole.Input
+    ]
+    forcing = builder.forcing({n: inputs[n][0] for n in names}, list(time))
+    resolved = magicc_model.with_nitrate_pattern(config, inputs, list(time))
+    agents = resolved["components"]["ForcingAggregation"]["agents"]
+    nitrate = next(a for a in agents if a["variable"] == magicc_model.NITRATE_FOSSIL)
+    return forcing, nitrate["regional_pattern"]
+
+
+@pytest.mark.parametrize("member", full_run.AR6_MEMBERS[:5])
+def test_nitrate_cloud_follows_ar6_member_on_spec(member):
+    """Setting an AR6 member's nitrate and cloud parameters on a built spec
+    matches building that member from MAGICC7.
+    """
+    run = full_run.load_ar6(member)
+    p = run.parameters
+    defaults = full.default_parameters()
+    reset = {
+        k: defaults[k]
+        for k in (
+            *NITRATE_CLOUD_FIELDS,
+            "rf_no3t_dir_apply",
+            "rf_cloud_albedo_aer_apply",
+        )
+    }
+
+    def translate(parameters):
+        return full.from_magicc7(
+            run.time_axis,
+            full_run.magicc7_emissions(run),
+            parameters=parameters,
+            convention=Convention.MAGICC7,
+        )
+
+    config, inputs = translate({**p, **reset})
+    expected_config, expected_inputs = translate(p)
+    spec = config["components"]["NitrateCloudForcing"]
+    assert p["rf_no3t_dir_apply"] == p["rf_cloud_albedo_aer_apply"] == 2
+    spec["nitrate"]["harmonisation"] = None
+    spec["cloud_albedo"]["harmonisation"] = None
+    for key, path in NITRATE_CLOUD_FIELDS.items():
+        target = spec
+        for field in path[:-1]:
+            target = target[field]
+        value = p[key]
+        target[path[-1]] = list(value) if isinstance(value, list) else value
+
+    actual, pattern = _nitrate_cloud(config, inputs, run.years)
+    expected, expected_pattern = _nitrate_cloud(
+        expected_config, expected_inputs, run.years
+    )
+    assert pattern == expected_pattern
+    for name, values in expected.items():
+        npt.assert_array_equal(actual[name], values, err_msg=name)
+
+
+@pytest.mark.parametrize(
+    ("parameters", "path", "value"),
+    [
+        ({"rf_no3t_dir_wm2": -0.08}, ("nitrate", "harmonisation", "target"), -0.08),
+        (
+            {"rf_regions_no3": [-1.0, -2.0, -0.5, -0.6]},
+            ("nitrate", "regional_pattern"),
+            [-1.0, -2.0, -0.5, -0.6],
+        ),
+        ({"cloud_weight_bc": 0.2}, ("cloud_albedo", "weights", "bc"), 0.2),
+    ],
+)
+def test_model_follows_nitrate_cloud_on_spec(parameters, path, value):
+    """A model with a nitrate or cloud parameter changed on its spec
+    runs as if rebuilt from MAGICC7, including nitrate's efficacy pattern.
+    """
+    run = full_run.load_default()
+    config, inputs = _magicc7({})
+    expected_config, expected_inputs = _magicc7(parameters)
+    target = config["components"]["NitrateCloudForcing"]
+    for field in path[:-1]:
+        target = target[field]
+    target[path[-1]] = value
+
+    def temperature(config, inputs):
+        model = emissions_driven.setup_model(config, inputs, run.time_axis).run()
+        boxes = model.timeseries().get_four_box_timeseries_by_name(
+            SURFACE_AIR_TEMPERATURE_CHANGE
+        )
+        return boxes.values()
+
+    expected = temperature(expected_config, expected_inputs)
+    npt.assert_array_equal(temperature(config, inputs), expected)
+    assert not np.array_equal(expected, temperature(*_magicc7({})))

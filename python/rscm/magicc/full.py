@@ -27,7 +27,11 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
-from rscm._lib.magicc import CH4ChemistryBuilder, HalocarbonChemistryBuilder
+from rscm._lib.magicc import (
+    CH4ChemistryBuilder,
+    ForcingAggregationBuilder,
+    HalocarbonChemistryBuilder,
+)
 from rscm.core import TimeAxis
 from rscm.magicc import checks, model
 from rscm.magicc import prescribed as pr
@@ -45,6 +49,7 @@ from rscm.names import (
     NITROGEN_FLUX_DEPOSITION,
     NITROGEN_FLUX_FIXATION,
     OCEAN_SURFACE_PARTIAL_PRESSURE_CO2,
+    OPTICAL_THICKNESS,
     SECTORS,
     Convention,
     child,
@@ -86,6 +91,8 @@ __all__ = [
     "load_inputs",
     "magicc7_units",
     "natural_emissions",
+    "nitrate_cloud_inputs",
+    "nitrate_cloud_parameters",
     "nitrogen_inputs",
     "nitrogen_parameters",
     "ozone_parameters",
@@ -93,6 +100,7 @@ __all__ = [
     "prescribed_concentrations",
     "prescribed_forcing",
     "reproduced_bugs",
+    "resolve_scales",
     "v8_fgas_split",
 ]
 
@@ -167,20 +175,85 @@ PRESCRIBED_AGENTS = {
     "Solar": "solar",
 }
 """
-Agents calculated before the run, and the MAGICC7 efficacy key of each.
+Aerosol, land-use and solar agents, and the MAGICC7 efficacy key of each.
+`NitrateCloudForcing` calculates the nitrate and cloud albedo forcing,
+and the others are prescribed.
 MAGICC7's total uses the direct aerosol efficacy for biomass aerosols and dust.
 """
 
-AGENT_SCALES = {"Solar": "rf_solar_scale"}
-"""Prescribed agents that ForcingAggregation scales, and the MAGICC7 scale of each."""
+OPTICAL_THICKNESS_FILES = {
+    "BCI": "BC|Fossil",
+    "BCB": "BC|Biosphere",
+    "OCI": "OC|Fossil",
+    "OCB": "OC|Biosphere",
+    "OCN": "OC|Natural",
+    "SOXI": "SOx|Fossil",
+    "SOXNB": "SOx|Biosphere",
+    "SS": "Sea Salt",
+}
+"""MAGICC7 optical thickness files of the cloud-active species, and their species."""
 
-NORMYEAR_PATTERNS = {
-    "bcsnow": "Black Carbon on Snow",
-    "landuse": "Land-use Change",
+CLOUD_SPECIES = {
+    "bc": ("BCI", "BCB"),
+    "oc": ("OCI", "OCB", "OCN"),
+    "sox": ("SOXI", "SOXNB"),
+    "sea_salt": ("SS",),
+}
+"""Cloud-active species of `NitrateCloudForcing` and their optical thickness files."""
+
+CLOUD_WEIGHT_KEYS = {"sea_salt": "ss"}
+
+CLOUD_NITRATE_SWITCH_YEAR = 2014.0
+"""Year from which MAGICC7 v7.5.3 extends cloud nitrate with NOx emissions."""
+
+NITRATE_CLOUD_EMISSIONS = ("NOx", "NH3", "SOx", "BC", "OC")
+"""Species whose emissions by sector `NitrateCloudForcing` reads."""
+
+DUST = f"{DIRECT}|Mineral Dust"
+
+AGENT_SCALES = {
+    "Solar": "rf_solar_scale",
+    f"{DIRECT}|SOx|Fossil": "rf_soxi_dir",
+    f"{DIRECT}|BC|Fossil": "rf_bci_dir",
+    f"{DIRECT}|OC|Fossil": "rf_oci_dir",
+    DUST: "rf_mineraldust_dir",
+    "Black Carbon on Snow": "rf_bcsnow_albedo",
+    "Land-use Change": "rf_landuse_albedo",
+}
+"""Prescribed agents that ForcingAggregation scales, and the MAGICC7 scale of each.
+
+A key that is not itself a parameter is scaled as its ``<key>_apply`` sets,
+see `SCALING_APPLY`.
+"""
+
+HELD_AGENTS = {
+    "Land-use Change": "rf_landuse_constantafteryr",
+    DUST: "rf_mineraldust_constantafteryr",
+}
+"""Prescribed agents MAGICC7 holds constant after a year, and the key of that year."""
+
+NORMYEAR_PATTERNS: dict[str, list[Any]] = {
+    "bcsnow": ["Black Carbon on Snow"],
+    "landuse": ["Land-use Change"],
+    **{
+        key: [f"{DIRECT}|{species}|Fossil", f"{DIRECT}|{species}|Biosphere"]
+        for key, species in DIRECT_SPECIES.items()
+    },
+    "aer_dir": [
+        [
+            [f"{DIRECT}|OC|Fossil", f"{DIRECT}|BC|Fossil"],
+            f"{DIRECT}|SOx|Fossil",
+        ],
+        [
+            [f"{DIRECT}|SOx|Biosphere", f"{DIRECT}|OC|Biosphere"],
+            f"{DIRECT}|BC|Biosphere",
+        ],
+        f"{DIRECT}|Mineral Dust",
+    ],
 }
 """
-Prescribed agents whose regional pattern MAGICC7 takes from their forcing
-in ``rf_regions_normyear``.
+Patterns MAGICC7 takes from scaled forcing in ``rf_regions_normyear``,
+as the agents summed in order, nested lists first.
 """
 
 GREENHOUSE_GASES = ("CO2", "CH4", "N2O", "F-Gases", "Montreal Protocol Halogen Gases")
@@ -647,31 +720,112 @@ def _scaling(parameters: Mapping[str, Any], key: str) -> dict[str, Any]:
     raise ValueError(msg)
 
 
-def _nitrate_inputs(
+def _component_scaling(parameters: Mapping[str, Any], key: str) -> dict[str, Any]:
+    """``scale`` or ``harmonisation`` of a component, as ``rf_<key>_apply`` sets."""
+    scaling = _scaling(parameters, key)
+    if "factor" in scaling:
+        return {"scale": scaling["factor"], "harmonisation": None}
+    return {
+        "harmonisation": {
+            "target": scaling["harmonisation_target"],
+            "reference_year": float(scaling["harmonisation_reference_year"]),
+        }
+    }
+
+
+def nitrate_cloud_parameters(
+    parameters: Mapping[str, Any], inputs: Mapping[str, pr.AerosolHistory]
+) -> dict[str, Any]:
+    """`NitrateCloudForcing` parameters from MAGICC7's.
+
+    Each cloud-active species follows emissions after its optical thickness files end.
+    """
+    p = parameters
+    return {
+        "natural_sox_emissions": p["sox_natural_emissions"],
+        "nitrate": {
+            "natural_nox_emissions": p["rf_noxn_emis"],
+            "natural_nh3_emissions": p["rf_nh3n_emis"],
+            "lambda_so2": p["rf_no3_lambdaso2"],
+            "burden_pi": p["rf_no3_preindburden"],
+            "optical_thickness_pi": p["rf_no3_preindot"],
+            "burden_to_optical_thickness_exponent": p["rf_no3_burden2ot_exp"],
+            "regional_pattern": list(p["rf_regions_no3"]),
+            "efficacy_pattern_year": float(p["rf_regions_normyear"]),
+            **_component_scaling(p, "no3t_dir"),
+        },
+        "cloud_albedo": {
+            "weights": {
+                "nitrate": p["cloud_weight_no3"],
+                **{
+                    s: p[f"cloud_weight_{CLOUD_WEIGHT_KEYS.get(s, s)}"]
+                    for s in CLOUD_SPECIES
+                },
+            },
+            "switch_years": {
+                "nitrate": CLOUD_NITRATE_SWITCH_YEAR,
+                **{
+                    species: min(
+                        inputs[f"file_{name.lower()}_ot"].last_year() for name in names
+                    )
+                    for species, names in CLOUD_SPECIES.items()
+                },
+            },
+            "bci_soluble_ratio": p["cloud_bci2bcb_soluble_ratio"],
+            "regional_pattern": list(p["rf_regions_cloud_albedo"]),
+            **_component_scaling(p, "cloud_albedo_aer"),
+        },
+    }
+
+
+def nitrate_cloud_inputs(
     years: NDArray[np.float64],
     emissions: Mapping[str, NDArray[np.float64]],
-    parameters: Mapping[str, Any],
-) -> tuple[tuple[Any, ...], dict[str, Any]]:
-    """Arguments of `pr.nitrate` and `pr.nitrate_pattern`."""
-    p = parameters
-    args = (
-        years,
-        (emissions["NOx|Fossil"], emissions["NOx|Biosphere"]),
-        (emissions["NH3|Fossil"], emissions["NH3|Biosphere"]),
-        _total(emissions, "SOx"),
-        p["rf_regions_no3"],
-    )
-    kwargs = {
-        **_scaling(p, "no3t_dir"),
-        "natural_nox": p["rf_noxn_emis"],
-        "natural_nh3": p["rf_nh3n_emis"],
-        "natural_sox": p["sox_natural_emissions"],
-        "lambda_so2": p["rf_no3_lambdaso2"],
-        "burden_pi": p["rf_no3_preindburden"],
-        "optical_thickness_pi": p["rf_no3_preindot"],
-        "burden_to_optical_thickness_exponent": p["rf_no3_burden2ot_exp"],
+    inputs: Mapping[str, pr.AerosolHistory],
+) -> Inputs:
+    """Emissions and optical thicknesses `NitrateCloudForcing` reads, with their units.
+
+    ``emissions`` are in MAGICC7's units, see `magicc7_units`.
+    Optical thicknesses take their first value before their files start
+    and their last value after they end.
+    """
+    out: Inputs = {
+        child(child(EMISSIONS, gas), sector): (
+            emissions[f"{gas}|{sector}"],
+            MAGICC7_EMISSIONS_UNITS[gas],
+        )
+        for gas in NITRATE_CLOUD_EMISSIONS
+        for sector in SECTORS
     }
-    return args, kwargs
+    for name, species in OPTICAL_THICKNESS_FILES.items():
+        history = inputs[f"file_{name.lower()}_ot"]
+        values = pr._hold_after(pr.on_axis(history, years), years, history.last_year())
+        out[child(OPTICAL_THICKNESS, species)] = (values, "1")
+    return out
+
+
+def _agent_scaling(parameters: Mapping[str, Any], name: str) -> dict[str, Any]:
+    """`ForcingAggregation` agent fields that scale and hold a prescribed agent."""
+    p = parameters
+    out: dict[str, Any] = {}
+    if name in HELD_AGENTS:
+        out["constant_after_year"] = float(p[HELD_AGENTS[name]])
+    if name == "Black Carbon on Snow":
+        out["relative_to_year"] = PREINDUSTRIAL_YEAR
+    key = AGENT_SCALES.get(name)
+    if key is None:
+        return out
+    if key in p:
+        return {**out, "scale": p[key]}
+    scaling = _scaling(p, key.removeprefix("rf_"))
+    if "factor" in scaling:
+        return {**out, "scale": scaling["factor"]}
+    harmonisation = {
+        "target": scaling["harmonisation_target"],
+        "reference_year": float(scaling["harmonisation_reference_year"]),
+        "preindustrial_reference_year": PREINDUSTRIAL_YEAR,
+    }
+    return {**out, "harmonisation": harmonisation}
 
 
 def prescribed_forcing(
@@ -680,11 +834,14 @@ def prescribed_forcing(
     parameters: Mapping[str, Any],
     inputs: Mapping[str, pr.AerosolHistory],
 ) -> dict[str, NDArray[np.float64]]:
-    """Four-box ERF of every agent in `PRESCRIBED_AGENTS`, before efficacies.
+    """ERF of each agent in `PRESCRIBED_AGENTS` and `BIOMASS_AGENTS`, before efficacies.
 
+    Nitrate and cloud albedo forcing come from `NitrateCloudForcing` instead.
+
+    Values are four-box, apart from global mineral dust.
+    Agents in `AGENT_SCALES` are unscaled, and `ForcingAggregation` scales them.
     ``emissions`` are in MAGICC7's units, see `magicc7_units`.
     """
-    p = parameters
     out = {}
     for species in ("SOx", "BC", "OC"):
         code = species.lower()
@@ -698,55 +855,13 @@ def prescribed_forcing(
             inputs[f"file_{code}b_rf"],
             emissions[f"{species}|Fossil"],
             emissions[f"{species}|Biosphere"],
-            **_scaling(p, f"{code}i_dir"),
         )
-    nitrate_args, nitrate_kwargs = _nitrate_inputs(years, emissions, p)
-    out[f"{DIRECT}|NO3|Fossil"], out[f"{DIRECT}|NO3|Biosphere"] = pr.nitrate(
-        *nitrate_args, **nitrate_kwargs
-    )
     land_use = inputs["file_landuse_rf"]
     co2_biosphere = emissions["CO2|Biosphere"]
-    out["Land-use Change"] = pr.land_use(
-        years,
-        land_use,
-        co2_biosphere,
-        **_scaling(p, "landuse_albedo"),
-        constant_after=p["rf_landuse_constantafteryr"],
-    )
-    out[f"{DIRECT}|Mineral Dust"] = pr.mineral_dust(
-        years,
-        land_use,
-        co2_biosphere,
-        p["rf_regions_dust"],
-        **_scaling(p, "mineraldust_dir"),
-        constant_after=p["rf_mineraldust_constantafteryr"],
-    )
+    out["Land-use Change"] = pr.land_use(years, land_use, co2_biosphere)
+    out[f"{DIRECT}|Mineral Dust"] = pr.area_mean(out["Land-use Change"])
     out["Black Carbon on Snow"] = pr.bc_on_snow(
-        years,
-        inputs["file_bcsnow_rf"],
-        _total(emissions, "BC"),
-        **_scaling(p, "bcsnow_albedo"),
-    )
-    names = ("SOXI", "SOXNB", "OCI", "OCB", "OCN", "BCI", "BCB", "SS")
-    out["Aerosols|Indirect Effect"] = pr.cloud_albedo(
-        years,
-        {name: inputs[f"file_{name.lower()}_ot"] for name in names},
-        {
-            "SOXI": emissions["SOx|Fossil"],
-            "SOXNB": emissions["SOx|Biosphere"],
-            "OCI": emissions["OC|Fossil"],
-            "OCB": emissions["OC|Biosphere"],
-            "BCI": emissions["BC|Fossil"],
-            "BCB": emissions["BC|Biosphere"],
-        },
-        # The cloud code reads total nitrate, which differs from the sum of sources.
-        pr._nitrate_total(*nitrate_args, shape_only=True, **nitrate_kwargs)[0],
-        emissions["NOx|Fossil"],
-        {g: p[f"cloud_weight_{g}"] for g in ("no3", "bc", "oc", "sox", "ss")},
-        p["rf_regions_cloud_albedo"],
-        **_scaling(p, "cloud_albedo_aer"),
-        bci_soluble_ratio=p["cloud_bci2bcb_soluble_ratio"],
-        natural_sox=p["sox_natural_emissions"],
+        years, inputs["file_bcsnow_rf"], _total(emissions, "BC")
     )
     solar = pr.on_axis(inputs["file_solar_rf"], years)[:, 0]
     out["Solar"] = np.repeat(solar[:, None], 4, axis=1)
@@ -813,7 +928,7 @@ def _agent(
         "efficacy": p.get(f"rf_efficacy_{key}", 1.0),
         "internal_efficacy": p[f"rf_intefficacy_{key}"],
         "regional_pattern": p.get(f"rf_regions_{key}", [1.0] * 4),
-        **({"scale": p[AGENT_SCALES[name]]} if name in AGENT_SCALES else {}),
+        **_agent_scaling(p, name),
         **extra,
     }
 
@@ -837,27 +952,12 @@ def forcing_agents(
     """ForcingAggregation agents of MAGICC7, apart from volcanic forcing.
 
     ``emissions`` are in MAGICC7's units, see `magicc7_units`.
-    The patterns in `NORMYEAR_PATTERNS` come from `prescribed` forcing
-    on `years` in ``rf_regions_normyear``, or the closest year.
-    The SOx, BC and OC patterns come from their industrial and biomass forcing
-    in that year, nitrate's from its total forcing,
-    and the direct aerosol pattern from the SOx, BC, OC and dust forcing.
+    `ForcingAggregation` takes the patterns in `NORMYEAR_PATTERNS`
+    from the agents' scaled forcing in its ``pattern_year``.
+    Setting up a model takes nitrate's from `NitrateCloudForcing`,
+    see `nitrate_cloud_parameters`.
     """
     p = parameters
-    i = int(np.abs(np.asarray(years) - p["rf_regions_normyear"]).argmin())
-    patterns = {
-        key: np.asarray(prescribed[name])[i].tolist()
-        for key, name in NORMYEAR_PATTERNS.items()
-    }
-    args, kwargs = _nitrate_inputs(years, emissions, p)
-    patterns["no3"] = pr.nitrate_pattern(*args, index=i, **kwargs)
-    for key, species in DIRECT_SPECIES.items():
-        fossil, biomass = (
-            np.asarray(prescribed[f"{DIRECT}|{species}|{sector}"])[i]
-            for sector in ("Fossil", "Biosphere")
-        )
-        patterns[key] = (fossil + biomass).tolist()
-    patterns["aer_dir"] = _direct_aerosol_pattern(prescribed, i)
     agents = [
         _agent(
             p,
@@ -874,10 +974,13 @@ def forcing_agents(
             agent["sum_of"] = halocarbon_forcing(group)
             agent["efficacy_per_variable"] = True
     agents.append(_agent(p, "Ozone|Tropospheric", "tropoz", regional=True))
-    agents.extend(
-        _agent(p, name, key, regional=True, **_pattern(patterns, key))
+    prescribed_agents = [
+        _agent(p, name, key, regional=name != DUST)
         for name, key in PRESCRIBED_AGENTS.items()
-    )
+    ]
+    dust = next(a for a in prescribed_agents if a["variable"] == child(ERF, DUST))
+    dust["spreading_pattern"] = p["rf_regions_dust"]
+    agents.extend(prescribed_agents)
     agents.append(
         _agent(
             p,
@@ -885,26 +988,27 @@ def forcing_agents(
             "aer_dir",
             regional=True,
             sum_of=[child(ERF, name) for name in BIOMASS_AGENTS],
-            **_pattern(patterns, "aer_dir"),
+            sum_of_scale_from=[
+                child(ERF, name.replace("|Biosphere", "|Fossil"))
+                if name.replace("|Biosphere", "|Fossil") in AGENT_SCALES
+                else ""
+                for name in BIOMASS_AGENTS
+            ],
         )
     )
+    for agent in agents:
+        key = _PATTERN_KEYS.get(agent["variable"].removeprefix(f"{ERF}|"))
+        if key in NORMYEAR_PATTERNS:
+            agent["pattern_terms"] = _summation(NORMYEAR_PATTERNS[key])
+            agent["pattern_year"] = float(p["rf_regions_normyear"])
     return agents
 
 
-def _direct_aerosol_pattern(
-    prescribed: Mapping[str, NDArray[np.float64]], index: int
-) -> list[float]:
-    """MAGICC7's ``rf_regions_aer_dir``: industrial, biomass and dust forcing boxes."""
-
-    def box(species: str, sector: str) -> NDArray[np.float64]:
-        return np.asarray(prescribed[f"{DIRECT}|{species}|{sector}"])[index]
-
-    industrial = (box("OC", "Fossil") + box("BC", "Fossil")) + box("SOx", "Fossil")
-    biomass = (box("SOx", "Biosphere") + box("OC", "Biosphere")) + box(
-        "BC", "Biosphere"
-    )
-    dust = np.asarray(prescribed[f"{DIRECT}|Mineral Dust"])[index]
-    return ((industrial + biomass) + dust).tolist()
+_PATTERN_KEYS = {
+    **{name: key for name, key in PRESCRIBED_AGENTS.items() if key != "aer_dir"},
+    DUST: "aer_dir",
+    BIOMASS: "aer_dir",
+}
 
 
 def _summation(terms: list[Any]) -> list[Any]:
@@ -912,10 +1016,6 @@ def _summation(terms: list[Any]) -> list[Any]:
         _summation(term) if isinstance(term, list) else child(ERF, term)
         for term in terms
     ]
-
-
-def _pattern(patterns: Mapping[str, list[float]], key: str) -> dict[str, Any]:
-    return {"regional_pattern": patterns[key]} if key in patterns else {}
 
 
 def efficacy_climate(climate: Mapping[str, Any]) -> dict[str, Any]:
@@ -1647,6 +1747,28 @@ def natural_emissions(
     return out
 
 
+def resolve_scales(
+    agents: Sequence[Mapping[str, Any]],
+    erf: Mapping[str, NDArray[np.float64]],
+    time: ArrayLike,
+) -> list[dict[str, Any]]:
+    """ForcingAggregation ``agents`` with each harmonisation replaced by its scale.
+
+    The scales come from the prescribed ``erf`` on ``time``,
+    so a run shorter than ``time`` keeps them.
+    """
+    scales = ForcingAggregationBuilder.from_parameters(
+        {"agents": cast("Any", agents)}
+    ).variable_scales(dict(erf), list(np.asarray(time, dtype=np.float64)))
+    out = []
+    for agent in agents:
+        resolved = dict(agent)
+        if resolved.pop("harmonisation", None) is not None:
+            resolved["scale"] = scales[agent["variable"]]
+        out.append(resolved)
+    return out
+
+
 def from_magicc7(  # noqa: PLR0913
     time_axis: TimeAxis,
     emissions: Mapping[str, ArrayLike],
@@ -1808,6 +1930,7 @@ def from_magicc7(  # noqa: PLR0913
             "ch4_stratospheric_h2o_fraction": p["ch4_addedstrath2o_percent"],
         },
         "OzoneForcing": ozone_parameters(p),
+        "NitrateCloudForcing": nitrate_cloud_parameters(p, files),
         "ForcingAggregation": {
             "agents": agents,
             "efficacy_method": EFFICACY_METHODS[p["rf_efficacy_apply"]],
@@ -1859,6 +1982,7 @@ def from_magicc7(  # noqa: PLR0913
     }
     if nitrogen:
         inputs |= nitrogen_inputs(time, native, p, files)
+    inputs |= nitrate_cloud_inputs(time, native, files)
     inputs |= {child(ERF, name): (v, "W/m^2") for name, v in prescribed.items()}
 
     config: ModelConfig = {"components": components, "initial_values": initial}

@@ -1,0 +1,47 @@
+{
+  "name": "NitrateCloudForcing",
+  "slug": "magicc-nitratecloudforcing",
+  "reference_model": "MAGICC7",
+  "variables_from_parameters": true,
+  "module_path": "rscm_magicc::forcing::nitrate_cloud",
+  "language": "rust",
+  "description": "Both follow MAGICC7 v7.5.3 and are closed-form in prescribed emissions and optical thicknesses.\nThey read those inputs in reference years before and after the step,\nso every input must be prescribed.\n\n# Nitrate\n\nThe nitrate burden follows NOx, NH3 and SOx emissions (Hauglustaine et al. 2014):\n\n$$\\alpha = \\frac{N A}{S \\lambda / A + 1}, \\quad B = B_{pi} \\alpha / \\alpha_0$$\n\nwhere $N$, $A$ and $S$ are total NOx, NH3 and SOx emissions in moles,\nand $\\alpha_0$ is $\\alpha$ in the first year.\nThe forcing is $\\tau_{pi} (B / B_{pi})^e - \\tau_{pi}$, times a factor.\nEach hemisphere takes its share of the NOx x NH3 product, spread over its boxes by a pattern,\nand splits between industrial and biomass sources by the same product.\n\n# Cloud albedo\n\nAn aerosol number index weights the optical thickness of each cloud-active species,\nnormalised by its area mean in its switch year.\nAfter that year each emitted species follows its emissions,\nas each year's emissions plus the next year's.\nNitrate takes the place of an optical thickness the same way.\nThe forcing is the change in log10 of the index since the first year,\nscaled so that the boxes equal `regional_pattern` in `pattern_year`, times a factor.\nIn the final year of the run the emitted species repeat the year before, as in MAGICC7.",
+  "category": "Radiative Forcing",
+  "tags": [
+    "forcing",
+    "aerosol",
+    "cloud",
+    "magicc"
+  ],
+  "inputs": [],
+  "outputs": [],
+  "states": [],
+  "parameters": [
+    {
+      "name": "nitrate",
+      "type": "NitrateParameters",
+      "description": "Nitrate direct forcing."
+    },
+    {
+      "name": "cloud_albedo",
+      "type": "CloudAlbedoParameters",
+      "description": "Cloud albedo forcing."
+    },
+    {
+      "name": "natural_sox_emissions",
+      "type": "FloatValue",
+      "description": "Natural SOx emissions, added to the anthropogenic ones (MAGICC7 `SOX_NATURAL_EMISSIONS`).\n\nunit: Mt S/yr"
+    },
+    {
+      "name": "nh_land_fraction",
+      "type": "FloatValue",
+      "description": "Northern Hemisphere land fraction\n\nunit: dimensionless"
+    },
+    {
+      "name": "sh_land_fraction",
+      "type": "FloatValue",
+      "description": "Southern Hemisphere land fraction\n\nunit: dimensionless"
+    }
+  ],
+  "source_file": "crates/rscm-magicc/src/forcing/nitrate_cloud.rs"
+}

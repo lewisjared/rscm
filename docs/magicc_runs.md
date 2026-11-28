@@ -118,8 +118,24 @@ The keyword arguments of `from_magicc7` override MAGICC7's setup:
 
 The forcing MAGICC7 prescribes before the run comes from `rscm.magicc.prescribed`
 and MAGICC7's input files packaged in `rscm.magicc`.
-This covers aerosols, black carbon on snow, land-use albedo, solar and volcanic forcing.
+This covers direct aerosols, black carbon on snow, land-use albedo, solar and volcanic forcing.
 `full.prescribed_forcing` returns the four-box ERF of each of these agents before efficacies.
+The direct SOx, BC and OC, mineral dust, land-use and BC on snow ERF it returns are unscaled.
+`ForcingAggregation` scales them with each agent's `scale` or `harmonisation`,
+so changing those on the built configuration needs no new translation.
+It also holds land-use and dust forcing after `constant_after_year`,
+spreads global dust forcing with `spreading_pattern`,
+and takes BC on snow relative to 1750 with `relative_to_year`.
+The regional patterns MAGICC7 takes from these agents' forcing in `rf_regions_normyear`
+come from `pattern_terms` in `ForcingAggregation` too.
+
+Nitrate and cloud albedo forcing come from the `NitrateCloudForcing` component instead.
+It reads the emissions and the optical thickness of each cloud-active species,
+which `full.nitrate_cloud_inputs` gives on the time axis.
+Its parameters hold the nitrate and cloud factors, harmonisation targets, weights and patterns,
+so these also follow a change on the built configuration.
+The setup takes the nitrate efficacy pattern from the component's forcing in
+`nitrate.efficacy_pattern_year`, which `from_magicc7` sets to `rf_regions_normyear`.
 `full.natural_emissions` calculates the natural CH4 and N2O emissions that close MAGICC7's budget.
 They are stated parameters of the components, so they can be changed on the configuration.
 `N2OChemistryBuilder.natural_emissions_in_balance` instead gives the natural N2O emissions
@@ -200,7 +216,7 @@ print(setup)
 ```text
 MAGICC emissions-driven
   time axis  1750 to 2101, 351 steps
-  components (12, in the order added)
+  components (13, in the order added)
     Permafrost           18 parameters
     CH4Chemistry         18 parameters
     ...
@@ -209,9 +225,10 @@ MAGICC emissions-driven
     Surface Air Temperature Change -> every consumer
     Atmospheric Concentrations|CO2 -> TerrestrialCarbon, OceanCarbon
     Equilibrium Climate Sensitivity -> ForcingAggregation
-  prescribed data (113)
-    Effective Radiative Forcing            13
-    Emissions                              56
+  prescribed data (126)
+    Effective Radiative Forcing            10
+    Emissions                              64
+    Optical Thickness                      8
     Prescribed Atmospheric Concentrations  44
   missing inputs: none
   initial values: 57 scalar, 1 gridded

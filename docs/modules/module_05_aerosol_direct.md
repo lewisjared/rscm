@@ -22,8 +22,10 @@ Four-box arrays follow the box order in [initialisation](module_00_initialisatio
 
 ## RSCM implementation
 
-- **Functions**: `direct_aerosol`, `nitrate`, `mineral_dust` and `bc_on_snow` in `rscm.magicc.prescribed`,
+- **Functions**: `direct_aerosol`, `mineral_dust` and `bc_on_snow` in `rscm.magicc.prescribed`,
   called by `rscm.magicc.full.prescribed_forcing`.
+  The `NitrateCloudForcing` component calculates nitrate in the run
+  (`crates/rscm-magicc/src/forcing/nitrate_cloud.rs`).
 - **Source**: `python/rscm/magicc/prescribed.py`.
 - **Status**: Implemented. See the [status table](README.md#rscm-implementation-status).
 - **Tests**: `test_prescribed_forcing` in `tests/regression/test_full_run.py`,
@@ -193,7 +195,7 @@ Finally the module sums the total direct aerosol forcing.
 
 ## Numerical considerations
 
-RSCM uses `math.pow` for the nitrate optical thickness to match MAGICC7's rounding.
+RSCM uses `f64::powf` for the nitrate optical thickness to match MAGICC7's rounding.
 
 ## Issues in MAGICC7
 
@@ -215,11 +217,6 @@ RSCM reproduces each of these.
   but not `RF_AER_CONSTANTAFTERYR` or `RF_TOTAL_CONSTANTAFTERYR`.
 - **Surface forcing**: RSCM does not calculate `DAT_TOTAER_DIR_SRF`.
   MAGICC7 leaves BC on snow out of it.
-- **Rust component**: `AerosolDirect` (`crates/rscm-magicc/src/forcing/aerosol_direct.rs`)
-  is a simplified version with no MAGICC7 parity test, and the MAGICC models do not use it.
-  It takes global emissions, combines sources and scales forcing linearly with emissions.
-  It spreads the forcing over the four boxes with species-weighted regional patterns.
-  It has no dust, BC on snow or Hauglustaine nitrate.
 
 ## References
 

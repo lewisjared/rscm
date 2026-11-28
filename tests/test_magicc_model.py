@@ -412,7 +412,7 @@ def test_nitrogen_deposition_from_emissions_matches_a_prescribed_deposition(
         nitrogen={**nitrogen, "deposition_from_emissions": None},
     )
     file_inputs = {
-        **{k: v for k, v in inputs.items() if not k.startswith("Emissions|NH3")},
+        **inputs,
         NITROGEN_FLUX_DEPOSITION: (prescribed_deposition, "Gt N/yr"),
     }
 

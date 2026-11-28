@@ -9,8 +9,8 @@ organised by domain:
   [N2OChemistryBuilder][], [HalocarbonChemistryBuilder][]
 - Carbon: [TerrestrialCarbonBuilder][], [OceanCarbonBuilder][],
   [CO2BudgetBuilder][], [PermafrostBuilder][]
-- Forcing: [GHGForcingBuilder][], [OzoneForcingBuilder][], [AerosolDirectBuilder][],
-  [AerosolIndirectBuilder][], [ForcingAggregationBuilder][]
+- Forcing: [GHGForcingBuilder][], [OzoneForcingBuilder][],
+  [NitrateCloudForcingBuilder][], [ForcingAggregationBuilder][]
 
 Two models couple them:
 
@@ -27,8 +27,6 @@ and [with_lags][rscm.magicc.model.with_lags] adds MAGICC7's feedback lags to a b
 """
 
 from rscm._lib.magicc import (
-    AerosolDirectBuilder,
-    AerosolIndirectBuilder,
     CH4ChemistryBuilder,
     CH4OxidationBuilder,
     ClimateUDEBBuilder,
@@ -37,6 +35,7 @@ from rscm._lib.magicc import (
     GHGForcingBuilder,
     HalocarbonChemistryBuilder,
     N2OChemistryBuilder,
+    NitrateCloudForcingBuilder,
     OceanCarbonBuilder,
     OzoneForcingBuilder,
     PermafrostBuilder,
@@ -48,8 +47,6 @@ from rscm.magicc.full import from_magicc7
 from rscm.magicc.model import with_lags
 
 __all__ = [
-    "AerosolDirectBuilder",
-    "AerosolIndirectBuilder",
     "CH4ChemistryBuilder",
     "CH4OxidationBuilder",
     "CO2BudgetBuilder",
@@ -58,6 +55,7 @@ __all__ = [
     "GHGForcingBuilder",
     "HalocarbonChemistryBuilder",
     "N2OChemistryBuilder",
+    "NitrateCloudForcingBuilder",
     "OceanCarbonBuilder",
     "OzoneForcingBuilder",
     "PermafrostBuilder",
