@@ -460,10 +460,7 @@ impl NitrateCloudForcingBuilder {
     ) -> PyResult<std::collections::HashMap<String, Py<PyAny>>> {
         let years = time.clone();
         let rows = self.with_drivers(inputs, time, |component, drivers| {
-            years
-                .iter()
-                .map(|&year| component.forcing(drivers, year))
-                .collect::<rscm_core::errors::RSCMResult<Vec<_>>>()
+            component.forcing_over(drivers, &years)
         })?;
         let column = |f: fn(&crate::forcing::NitrateCloud) -> [f64; 4]| {
             numpy::PyArray2::from_vec2(py, &rows.iter().map(|r| f(r).to_vec()).collect::<Vec<_>>())
@@ -506,31 +503,26 @@ impl NitrateCloudForcingBuilder {
 }
 
 /// Prescribed series by name on a time axis, read at any time as a model window reads them.
-struct SeriesLookup {
-    series: std::collections::HashMap<String, Vec<Vec<f64>>>,
+struct SeriesLookup<'py> {
+    series: std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<'py, f64>>,
     time: Vec<f64>,
 }
 
-impl SeriesLookup {
+impl<'py> SeriesLookup<'py> {
     fn new(
-        inputs: Option<std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<f64>>>,
+        inputs: Option<std::collections::HashMap<String, numpy::PyReadonlyArrayDyn<'py, f64>>>,
         time: Option<Vec<f64>>,
     ) -> PyResult<Self> {
         let time = time.unwrap_or_default();
-        let mut series = std::collections::HashMap::new();
-        for (name, array) in inputs.unwrap_or_default() {
+        let series = inputs.unwrap_or_default();
+        for (name, array) in &series {
             let array = array.as_array();
-            if array.shape().first() != Some(&time.len()) || array.ndim() > 2 {
+            let shape = array.shape();
+            if shape.first() != Some(&time.len()) || shape.len() > 2 {
                 return Err(PyValueError::new_err(format!(
-                    "{name} needs one row per time, got shape {:?}",
-                    array.shape()
+                    "{name} needs one row per time, got shape {shape:?}"
                 )));
             }
-            let rows = array
-                .outer_iter()
-                .map(|row| row.iter().copied().collect())
-                .collect();
-            series.insert(name, rows);
         }
         Ok(Self { series, time })
     }
@@ -543,9 +535,11 @@ impl SeriesLookup {
     ///
     /// Errors between nodes, because the model's interpolation is not repeated here.
     fn at(&self, name: &str, t: f64) -> rscm_core::errors::RSCMResult<Vec<f64>> {
-        let rows = self.series.get(name).ok_or_else(|| {
+        let array = self.series.get(name).ok_or_else(|| {
             rscm_core::errors::RSCMError::Error(format!("no prescribed series for {name}"))
         })?;
+        let array = array.as_array();
+        let row = |i: usize| array.index_axis(numpy::ndarray::Axis(0), i);
         let time = &self.time;
         let Some(last) = time.len().checked_sub(1) else {
             return Err(rscm_core::errors::RSCMError::Error(format!(
@@ -553,14 +547,14 @@ impl SeriesLookup {
             )));
         };
         if t <= time[0] {
-            return Ok(rows[0].clone());
+            return Ok(row(0).iter().copied().collect());
         }
         if t >= time[last] {
-            return Ok(rows[last].clone());
+            return Ok(row(last).iter().copied().collect());
         }
         let i = time.partition_point(|&x| x <= t) - 1;
         if time[i] == t {
-            return Ok(rows[i].clone());
+            return Ok(row(i).iter().copied().collect());
         }
         Err(rscm_core::errors::RSCMError::Error(format!(
             "{name} is read at {t}, between the times of its prescribed series"
