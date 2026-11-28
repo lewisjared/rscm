@@ -258,26 +258,8 @@ fn lagged(window: &ScalarWindow, end: FloatValue, lag: usize) -> FloatValue {
 #[typetag::serde(name = "magicc.HalocarbonChemistry")]
 impl Component for HalocarbonChemistry {
     fn definitions(&self) -> Vec<VariableDefinition> {
+        // Declared in the order solve_into reads and writes them, so each lookup skips the search.
         let mut definitions = Vec::new();
-        for species in self.parameters.all_species() {
-            definitions.push(VariableDefinition::scalar_input(
-                &Self::emissions_name(&species.name),
-                &format!("kt {}/yr", species.name),
-            ));
-            definitions.push(VariableDefinition::scalar_state(
-                &Self::concentration_name(&species.name),
-                "ppt",
-            ));
-        }
-        for (list, switch_year) in self.switch_years() {
-            for species in list {
-                definitions.extend(prescribed_definition(
-                    &Self::concentration_name(&species.name),
-                    "ppt",
-                    switch_year,
-                ));
-            }
-        }
         if self.parameters.include_variable_oh_lifetime {
             definitions.push(
                 VariableDefinition::scalar_input(LIFETIME_CH4_OH, "yr")
@@ -304,14 +286,21 @@ impl Component for HalocarbonChemistry {
                 VariableDefinition::scalar_output(name, "W/m^2")
             }
         };
-        definitions.push(forcing(ERF_F_GASES, regional));
-        definitions.push(forcing(ERF_MONTREAL_PROTOCOL_HALOGEN_GASES, false));
-        for (group, (list, _)) in self.switch_years().into_iter().enumerate() {
+        for (group, (list, switch_year)) in self.switch_years().into_iter().enumerate() {
             for species in list {
+                let concentration = Self::concentration_name(&species.name);
+                definitions.push(VariableDefinition::scalar_state(&concentration, "ppt"));
+                definitions.push(VariableDefinition::scalar_input(
+                    &Self::emissions_name(&species.name),
+                    &format!("kt {}/yr", species.name),
+                ));
+                definitions.extend(prescribed_definition(&concentration, "ppt", switch_year));
                 let name = Self::forcing_name(group, &species.name);
                 definitions.push(forcing(&name, regional && group == 0));
             }
         }
+        definitions.push(forcing(ERF_F_GASES, regional));
+        definitions.push(forcing(ERF_MONTREAL_PROTOCOL_HALOGEN_GASES, false));
         definitions.push(VariableDefinition::scalar_output(
             EQUIVALENT_EFFECTIVE_STRATOSPHERIC_CHLORINE,
             "ppt",
@@ -366,10 +355,10 @@ impl Component for HalocarbonChemistry {
                 } else {
                     StateValue::Scalar(species_forcing)
                 };
+                out.set(&names.concentration, next);
                 out.set(&names.forcing, value);
                 let delayed = lagged(&window, next, self.parameters.stratospheric_delay);
                 eesc += self.eesc_contribution(species, delayed);
-                out.set(&names.concentration, next);
             }
         }
 
