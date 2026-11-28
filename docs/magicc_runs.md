@@ -121,6 +121,9 @@ and MAGICC7's input files packaged in `rscm.magicc`.
 This covers aerosols, black carbon on snow, land-use albedo, solar and volcanic forcing.
 `full.prescribed_forcing` returns the four-box ERF of each of these agents before efficacies.
 `full.natural_emissions` calculates the natural CH4 and N2O emissions that close MAGICC7's budget.
+They are stated parameters of the components, so they can be changed on the configuration.
+`N2OChemistryBuilder.natural_emissions_in_balance` instead gives the natural N2O emissions
+that hold the starting concentration over the first step, as MAGICC v8 can.
 
 ## Validation and exit codes
 
@@ -159,8 +162,12 @@ The configuration is a plain dict that can be edited before building:
 - `initial_values` holds the value at the first time bound of each state variable.
   The build calculates those of `ClimateUDEB` and `ForcingAggregation` from the first year's forcing.
 - `initial_forcing`, optional, holds the forcing of `ForcingAggregation` agents at the first time bound.
-  As in MAGICC7, `from_magicc7` starts the F-gas forcing from the second year's value,
-  which a two-year run of the translated configuration calculates.
+  Without an F-gas entry, the build starts the four-box F-gas forcing from its value over the first step,
+  as MAGICC7 does.
+  It solves HalocarbonChemistry's first step, after CH4Chemistry and Permafrost,
+  so the value follows the configuration it is built from.
+  `full.v8_fgas_split` switches to MAGICC v8's split instead:
+  every F-gas follows `rf_regions_fgas`, and the F-gas forcing starts from zero.
 
 ```python
 config["components"]["ClimateUDEB"]["ecs"] = 2.5

@@ -35,8 +35,10 @@
 //!
 //! # Differences from MAGICC7
 //!
-//! - **Budget initialisation**: natural emissions are a fixed parameter.
-//!   `rscm.magicc.full.natural_emissions` calculates MAGICC7's budget-closing value for it.
+//! - **Budget initialisation**: natural emissions are a stated parameter.
+//!   `rscm.magicc.full.natural_emissions` calculates MAGICC7's budget-closing value for it,
+//!   and [`N2OChemistry::natural_emissions_in_balance`] the value that holds the starting
+//!   concentration.
 //!
 //! With `concentration_switch_year` the concentration follows
 //! `Prescribed Atmospheric Concentrations|N2O` until that year.
@@ -149,6 +151,21 @@ impl N2OChemistry {
 
         (self.burden_to_concentration(burden_next), tau)
     }
+
+    /// Natural emissions (Mt N2ON/yr) that hold `concentration` (ppb) over the first step,
+    /// given the anthropogenic emissions the component reads in that step.
+    ///
+    /// The first step measures its feedbacks from `concentration` and sees no warming,
+    /// so its lifetime is `initial_n2o_lifetime`.
+    /// This mirrors MAGICC v8's `n2o_natural_emissions_in_balance`.
+    pub fn natural_emissions_in_balance(
+        &self,
+        concentration: FloatValue,
+        anthropogenic_emissions: FloatValue,
+    ) -> FloatValue {
+        self.concentration_to_burden(concentration) / self.parameters.initial_n2o_lifetime
+            - anthropogenic_emissions
+    }
 }
 
 impl Default for N2OChemistry {
@@ -244,6 +261,29 @@ mod tests {
         let (new_conc, lifetime) = component.solve_concentration(c, c, c, 0.0, 0.0, 1.0);
         assert!((new_conc - c).abs() < 1e-9, "Expected {c}, got {new_conc}");
         assert!((lifetime - component.parameters.initial_n2o_lifetime).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_natural_emissions_in_balance_hold_the_concentration() {
+        let component = default_component();
+        let natural = component.natural_emissions_in_balance(273.865, 0.05474145);
+        let balanced = N2OChemistry::from_parameters(N2OChemistryParameters {
+            natural_emissions: natural,
+            ..Default::default()
+        });
+        let (new_conc, _) =
+            balanced.solve_concentration(273.865, 273.865, 273.865, 0.05474145, 0.0, 1.0);
+        assert!((new_conc - 273.865).abs() < 1e-12, "Got {new_conc}");
+    }
+
+    #[test]
+    fn test_natural_emissions_in_balance_follow_the_lifetime() {
+        let component = N2OChemistry::from_parameters(N2OChemistryParameters {
+            initial_n2o_lifetime: 100.0,
+            tg_per_ppb: 5.0,
+            ..Default::default()
+        });
+        assert_eq!(component.natural_emissions_in_balance(300.0, 3.0), 12.0);
     }
 
     #[test]

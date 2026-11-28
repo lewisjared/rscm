@@ -526,6 +526,14 @@ class N2OChemistryBuilder(ComponentBuilder):
         """Create a builder from a parameter dictionary."""
     def build(self) -> RustComponent:
         """Build the N2O chemistry component."""
+    def natural_emissions_in_balance(
+        self, concentration: float, anthropogenic_emissions: float
+    ) -> float:
+        """Return the natural emissions (Mt N2ON/yr) that hold ``concentration`` (ppb).
+
+        They hold it over the first step,
+        given the anthropogenic emissions (Mt N2ON/yr) read in that step.
+        """
 
 class HalocarbonSpecies(TypedDict):
     """A halocarbon species. Lifetimes in yr, radiative efficiency in W/m²/ppb."""
@@ -675,6 +683,12 @@ class PrognosticFixation(TypedDict):
     maximum_fixation_rate: float
     half_saturation_npp: float
 
+class DepositionFromEmissions(TypedDict, total=False):
+    """Nitrogen deposition on land from NOx and NH3 emissions."""
+
+    land_fraction: float
+    include_nh3_counted_twice: bool
+
 class NitrogenParameters(TypedDict, total=False):
     """Parameters for the nitrogen limitation of NPP.
 
@@ -689,6 +703,7 @@ class NitrogenParameters(TypedDict, total=False):
     availability_factor_c: float
     loss_turnover_time: float
     prognostic_fixation: PrognosticFixation | None
+    deposition_from_emissions: DepositionFromEmissions | None
 
 @final
 class TerrestrialCarbonBuilder(ComponentBuilder):

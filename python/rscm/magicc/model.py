@@ -12,7 +12,8 @@ A configuration is a plain dict:
 - ``initial_forcing`` (optional): the forcing of ForcingAggregation agents
   at the first time bound, keyed by agent variable,
   with four values for a regional agent and one otherwise.
-  Other agents start from their prescribed forcing, or zero.
+  The four-box F-gas agent otherwise starts from its forcing over the first step,
+  as in MAGICC7, and other agents from their prescribed forcing, or zero.
 
 The inputs map each prescribed variable to its values and unit,
 with one value per time bound.
@@ -51,6 +52,7 @@ from rscm.core import (
     GridType,
     ModelBuilder,
     TimeAxis,
+    TimeseriesCollection,
     VariableRole,
     VariableSchema,
 )
@@ -62,6 +64,7 @@ from rscm.names import (
     ATMOSPHERIC_CONCENTRATIONS_CO2,
     EFFICACY_ADJUSTED_ERF,
     EQUILIBRIUM_CLIMATE_SENSITIVITY,
+    ERF_F_GASES,
     SURFACE_AIR_TEMPERATURE_CHANGE,
 )
 from rscm.spec import ComponentSpec, Lag, ModelSetup, ModelSpec
@@ -73,7 +76,7 @@ if TYPE_CHECKING:
     from numpy.typing import ArrayLike, NDArray
 
     from rscm._lib.core import RustComponent
-    from rscm.core import Model, TimeseriesCollection
+    from rscm.core import Model, StateValue
 
     Inputs = Mapping[str, tuple[ArrayLike, str]]
 
@@ -325,6 +328,72 @@ def _initial_forcing(
     return out
 
 
+# Components the first halocarbon step may read from, in the model's solve order.
+_UPSTREAM = ("Permafrost", "CH4Chemistry")
+
+
+def _first_fgas_forcing(
+    components: Mapping[str, RustComponent],
+    prescribed: Mapping[str, tuple[NDArray[np.float64], str]],
+    initial_values: Mapping[str, float],
+    time_axis: TimeAxis,
+) -> dict[str, list[float]]:
+    """Return the four-box F-gas forcing over the first step, keyed by its variable.
+
+    MAGICC7 v7.5.3 starts the F-gas agent from it.
+    HalocarbonChemistry solves its first step as in the model,
+    after any Permafrost and CH4Chemistry.
+    Temperatures are zero and states take their initial values.
+    Without ``fgas_regions`` the F-gas forcing is global, as in MAGICC v8,
+    and this returns nothing.
+    """
+    if "HalocarbonChemistry" not in components:
+        return {}
+    n = len(time_axis)
+    t_current, t_next = time_axis.values()[:2]
+    collection = TimeseriesCollection()
+
+    def add(name: str, values: NDArray[np.float64], unit: str) -> None:
+        series = from_inputs({name: (values, unit)}, time_axis)
+        collection.add_timeseries(name, series[name])
+
+    def solve(key: str) -> dict[str, StateValue]:
+        component = components[key]
+        for d in component.definitions():
+            if d.role == VariableRole.Output or d.name in collection:
+                continue
+            if d.name in prescribed:
+                add(d.name, *prescribed[d.name])
+            elif d.name == SURFACE_AIR_TEMPERATURE_CHANGE:
+                add(d.name, np.zeros(n), d.unit)
+            else:
+                values = np.full(n, np.nan)
+                values[0] = initial_values[d.name]
+                add(d.name, values, d.unit)
+        out = component.solve(t_current, t_next, collection)
+        for name, value in out.items():
+            if name not in collection:
+                row = _values(value)
+                held = np.tile(row, (n, 1)) if len(row) > 1 else np.full(n, row[0])
+                add(name, held, _unit(component, name))
+        return out
+
+    for key in _UPSTREAM:
+        if key in components:
+            solve(key)
+    boxes = solve("HalocarbonChemistry")[ERF_F_GASES].as_four_box()
+    return {} if boxes is None else {ERF_F_GASES: boxes.to_list()}
+
+
+def _values(value: StateValue) -> list[float]:
+    grid = value.as_four_box() or value.as_hemispheric()
+    return grid.to_list() if grid is not None else [value.to_scalar()]
+
+
+def _unit(component: RustComponent, name: str) -> str:
+    return next(d.unit for d in component.definitions() if d.name == name)
+
+
 def _global(values: NDArray[np.float64]) -> float:
     if values.ndim == 0:
         return float(values)
@@ -360,11 +429,14 @@ def setup(  # noqa: PLR0913
     _check_read(v, inputs, components.values())
     v.raise_if_any()
     first = {key: values[0] for key, (values, _) in prescribed.items()}
+    given = dict(config.get("initial_forcing", {}))
+    if ERF_F_GASES not in given:
+        given |= _first_fgas_forcing(
+            components, prescribed, config["initial_values"], time_axis
+        )
     aggregation = specs["ForcingAggregation"]
     total, boxes = aggregation.configure().aggregate(
-        _initial_forcing(
-            aggregation.parameters["agents"], first, config.get("initial_forcing", {})
-        )
+        _initial_forcing(aggregation.parameters["agents"], first, given)
     )
     sea_level = {}
     if "SeaLevelRise" in components:

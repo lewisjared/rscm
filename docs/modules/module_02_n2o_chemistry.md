@@ -180,6 +180,8 @@ RSCM reproduces each of these.
 
 - **Natural emissions**: RSCM takes them as a parameter instead of closing the budget inside the component.
   `rscm.magicc.full.natural_emissions` calculates MAGICC7's values.
+  `N2OChemistryBuilder.natural_emissions_in_balance` gives MAGICC v8's alternative,
+  the value that holds the starting concentration over the first step.
 - **Inverse emissions**: `N2OChemistry` does not output them.
 
 ## References

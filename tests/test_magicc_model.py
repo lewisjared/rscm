@@ -7,15 +7,24 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from rscm._lib.magicc import N2OChemistryBuilder
 from rscm.core import TimeAxis
 from rscm.magicc import concentration_driven, emissions_driven, full, model
 from rscm.magicc.prescribed import area_fractions
-from rscm.names import ERF, SECTORS, prescribed
+from rscm.names import (
+    EFFICACY_ADJUSTED_ERF,
+    ERF,
+    ERF_F_GASES,
+    NITROGEN_FLUX_DEPOSITION,
+    SECTORS,
+    prescribed,
+)
 from rscm.spec import diff, run_all
 from rscm.validation import InputValidationError, IssueKind
 
 # MAGICC7 harmonises prescribed forcing in 2019.
 YEARS = np.arange(1750.0, 2021.0)
+N2O_CONCENTRATION = "Atmospheric Concentrations|N2O"
 
 
 @pytest.fixture(scope="module")
@@ -268,3 +277,175 @@ def test_run_fails_past_the_maximum_temperature(translated):
 
     with pytest.raises(RuntimeError, match=r"above the maximum_temperature of 0\.1 K"):
         setup.run()
+
+
+@pytest.fixture(scope="module")
+def fgas_emitted(emissions, input_files):
+    """A translation whose short- and long-lived F-gases are emitted from the start."""
+    n = len(YEARS)
+    emitted = emissions | {
+        species: np.linspace(5.0, 50.0, n) for species in ("HFC152a", "HFC134a", "CF4")
+    }
+    return full.from_magicc7(
+        TimeAxis.from_values(YEARS),
+        emitted,
+        input_files=input_files,
+        parameters={"fgas_switchfromconc2emis_year": 1750},
+    )
+
+
+def _with(config, component, **parameters):
+    components = copy.deepcopy(config["components"])
+    components[component] |= parameters
+    return {**config, "components": components}
+
+
+def _first_bound(config, inputs):
+    """Efficacy-adjusted ERF at the first time bound, and the first-step F-gas ERF."""
+    setup = emissions_driven.setup_model(config, inputs, TimeAxis.from_values(YEARS))
+    fgas = setup.run().timeseries().get_four_box_timeseries_by_name(ERF_F_GASES)
+    first_step = [float(v) for v in fgas.values()[1]]
+    return setup.spec.initial_grid_values[EFFICACY_ADJUSTED_ERF], first_step
+
+
+def test_fgas_forcing_starts_from_the_first_step(fgas_emitted):
+    config, inputs = fgas_emitted
+    actual, first_step = _first_bound(config, inputs)
+    given = {**config, "initial_forcing": {ERF_F_GASES: first_step}}
+
+    assert "initial_forcing" not in config
+    assert all(v != 0.0 for v in first_step)
+    assert actual == _first_bound(given, inputs)[0]
+
+
+def test_first_fgas_forcing_follows_the_forcing_scale(fgas_emitted):
+    config, inputs = fgas_emitted
+    scaled = _with(config, "HalocarbonChemistry", fgas_forcing_scale=2.0)
+
+    actual, first_step = _first_bound(scaled, inputs)
+    given = {**scaled, "initial_forcing": {ERF_F_GASES: first_step}}
+
+    assert actual == _first_bound(given, inputs)[0]
+    assert actual != _first_bound(config, inputs)[0]
+
+
+def test_given_initial_forcing_overrides_the_first_step(fgas_emitted):
+    config, inputs = fgas_emitted
+    zero = {**config, "initial_forcing": {ERF_F_GASES: [0.0] * 4}}
+
+    assert _first_bound(zero, inputs)[0] != _first_bound(config, inputs)[0]
+
+
+def test_v8_fgas_split_follows_the_global_pattern(fgas_emitted):
+    config, inputs = fgas_emitted
+    v8 = full.v8_fgas_split(config)
+    pattern = np.asarray(
+        config["components"]["HalocarbonChemistry"]["fgas_regions"]["regional_pattern"]
+    )
+
+    _, first_step = _first_bound(v8, inputs)
+    _, magicc7 = _first_bound(config, inputs)
+
+    assert v8["initial_forcing"] == {ERF_F_GASES: [0.0] * 4}
+    np.testing.assert_allclose(
+        np.asarray(first_step) / pattern, first_step[0] / pattern[0]
+    )
+    assert first_step != magicc7
+
+
+def test_natural_n2o_in_balance_holds_the_starting_concentration(translated):
+    config, inputs = translated
+    start = config["initial_values"][N2O_CONCENTRATION]
+    first_step = float(inputs["Emissions|N2O"][0][0])
+    emissions = _with(config, "N2OChemistry", concentration_switch_year=None)
+    inputs = {k: v for k, v in inputs.items() if k != prescribed(N2O_CONCENTRATION)}
+
+    natural = N2OChemistryBuilder.from_parameters(
+        emissions["components"]["N2OChemistry"]
+    ).natural_emissions_in_balance(start, first_step)
+    balanced = _with(emissions, "N2OChemistry", natural_emissions=natural)
+    model = emissions_driven.setup_model(
+        balanced, inputs, TimeAxis.from_values(YEARS)
+    ).run()
+    concentration = model.timeseries().get_timeseries_by_name(N2O_CONCENTRATION)
+
+    assert concentration.values()[1] == pytest.approx(start, rel=1e-14)
+
+
+def test_natural_n2o_in_balance_follows_the_lifetime(translated):
+    config, _ = translated
+    n2o = config["components"]["N2OChemistry"]
+    shorter = {**n2o, "initial_n2o_lifetime": n2o["initial_n2o_lifetime"] / 2}
+
+    def balance(parameters):
+        builder = N2OChemistryBuilder.from_parameters(parameters)
+        return builder.natural_emissions_in_balance(270.0, 1.0)
+
+    assert balance(shorter) + 1.0 == pytest.approx(2 * (balance(n2o) + 1.0))
+
+
+@pytest.mark.parametrize("bugs", ["7.5.3", ()])
+def test_nitrogen_deposition_from_emissions_matches_a_prescribed_deposition(
+    emissions, input_files, bugs
+):
+    time_axis = TimeAxis.from_values(YEARS)
+    parameters = {"ncycle_apply": 1, "ncycle_apply_ndep_from_emis": 1}
+    config, inputs = full.from_magicc7(
+        time_axis, emissions, parameters=parameters, input_files=input_files, bugs=bugs
+    )
+    nitrogen = config["components"]["TerrestrialCarbon"]["nitrogen"]
+    deposition = nitrogen["deposition_from_emissions"]
+    nh3 = "Fossil" if deposition["include_nh3_counted_twice"] else "Biosphere"
+    e = {name: values for name, (values, _) in inputs.items()}
+    prescribed_deposition = (
+        1e-3
+        * deposition["land_fraction"]
+        * (
+            e["Emissions|NOx|Fossil"]
+            + e["Emissions|NOx|Biosphere"]
+            + (e["Emissions|NH3|Fossil"] + e[f"Emissions|NH3|{nh3}"])
+        )
+    )
+    file_driven = _with(
+        config,
+        "TerrestrialCarbon",
+        nitrogen={**nitrogen, "deposition_from_emissions": None},
+    )
+    file_inputs = {
+        **{k: v for k, v in inputs.items() if not k.startswith("Emissions|NH3")},
+        NITROGEN_FLUX_DEPOSITION: (prescribed_deposition, "Gt N/yr"),
+    }
+
+    def pool(config, inputs):
+        model = emissions_driven.setup_model(config, inputs, time_axis).run()
+        return model.timeseries().get_timeseries_by_name("Nitrogen Pool").values()
+
+    assert NITROGEN_FLUX_DEPOSITION not in inputs
+    assert deposition["include_nh3_counted_twice"] == (bugs == "7.5.3")
+    np.testing.assert_array_equal(pool(config, inputs), pool(file_driven, file_inputs))
+
+
+def test_nitrogen_deposition_follows_the_land_fraction(emissions, input_files):
+    time_axis = TimeAxis.from_values(YEARS)
+    parameters = {"ncycle_apply": 1, "ncycle_apply_ndep_from_emis": 1}
+    config, inputs = full.from_magicc7(
+        time_axis, emissions, parameters=parameters, input_files=input_files
+    )
+    nitrogen = config["components"]["TerrestrialCarbon"]["nitrogen"]
+    halved = _with(
+        config,
+        "TerrestrialCarbon",
+        nitrogen={
+            **nitrogen,
+            "deposition_from_emissions": {
+                **nitrogen["deposition_from_emissions"],
+                "land_fraction": 0.35,
+            },
+        },
+    )
+
+    def pool(config):
+        model = emissions_driven.setup_model(config, inputs, time_axis).run()
+        return model.timeseries().get_timeseries_by_name("Nitrogen Pool").values()
+
+    assert not np.array_equal(pool(config)[1:], pool(halved)[1:])

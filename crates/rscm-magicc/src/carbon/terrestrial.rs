@@ -41,6 +41,9 @@
 //! # Inputs
 //!
 //! - `Nitrogen Flux|Deposition` (Gt N/yr), only with the `nitrogen` parameter
+//!   and no deposition from emissions
+//! - `Emissions|NOx|{Fossil,Biosphere}` and `Emissions|NH3|{Fossil,Biosphere}` (Mt N/yr),
+//!   only with deposition from emissions
 //! - `Nitrogen Flux|Fixation` (Gt N/yr), only with the `nitrogen` parameter and no prognostic fixation
 //!
 //! # Outputs
@@ -57,6 +60,7 @@ use std::any::Any;
 use super::nitrogen::{NitrogenBudget, NitrogenDrivers, NitrogenState};
 use crate::parameters::TerrestrialCarbonParameters;
 use crate::reference::feedback_warming;
+use crate::{NH3_SECTORS, NOX_SECTORS};
 use rscm_core::component::{
     Component, ComponentState, GridType, InputState, OutputBuffer, OutputState, OutputWriter,
     TimeseriesType, VariableDefinition, VariableRole,
@@ -734,9 +738,17 @@ impl TerrestrialCarbon {
         let nitrogen_inputs = match &self.parameters.nitrogen {
             None => (0.0, 0.0),
             Some(n) => (
-                input_state
-                    .get_scalar_window(NITROGEN_FLUX_DEPOSITION)
-                    .get(),
+                match &n.deposition_from_emissions {
+                    Some(d) => {
+                        let sectors = |names: [&str; 2]| {
+                            names.map(|name| input_state.get_scalar_window(name).get())
+                        };
+                        d.deposition(sectors(NOX_SECTORS), sectors(NH3_SECTORS))
+                    }
+                    None => input_state
+                        .get_scalar_window(NITROGEN_FLUX_DEPOSITION)
+                        .get(),
+                },
                 if n.prognostic_fixation.is_some() {
                     0.0
                 } else {
@@ -833,10 +845,16 @@ impl Component for TerrestrialCarbon {
     fn definitions(&self) -> Vec<VariableDefinition> {
         let mut definitions = Self::generated_definitions();
         if let Some(n) = &self.parameters.nitrogen {
-            definitions.push(VariableDefinition::scalar_input(
-                NITROGEN_FLUX_DEPOSITION,
-                "Gt N/yr",
-            ));
+            if n.deposition_from_emissions.is_some() {
+                for name in NOX_SECTORS.into_iter().chain(NH3_SECTORS) {
+                    definitions.push(VariableDefinition::scalar_input(name, "Mt N/yr"));
+                }
+            } else {
+                definitions.push(VariableDefinition::scalar_input(
+                    NITROGEN_FLUX_DEPOSITION,
+                    "Gt N/yr",
+                ));
+            }
             definitions.push(if n.prognostic_fixation.is_some() {
                 VariableDefinition::scalar_output(NITROGEN_FLUX_FIXATION, "Gt N/yr")
                     .with_timeseries_type(TimeseriesType::Average)
