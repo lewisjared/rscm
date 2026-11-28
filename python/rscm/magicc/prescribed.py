@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Mapping
     from pathlib import Path
 
     from numpy.typing import ArrayLike, NDArray
@@ -41,8 +41,6 @@ __all__ = [
     "nitrate",
     "on_axis",
     "read_input",
-    "solar",
-    "volcanic_pattern",
     "volcanic_substeps",
 ]
 
@@ -532,35 +530,6 @@ def cloud_albedo(  # noqa: PLR0913
     return boxes * factor
 
 
-def solar(values: ArrayLike, scale: float = 0.66) -> NDArray[np.float64]:
-    """Global solar forcing, which MAGICC7 scales without offsetting."""
-    return np.asarray(values, dtype=np.float64) * scale
-
-
-def volcanic_pattern(  # noqa: PLR0913
-    times: ArrayLike,
-    northern: ArrayLike,
-    southern: ArrayLike,
-    *,
-    start_year: float,
-    last_year: float,
-    scale: float = 0.74,
-) -> tuple[float, float, float, float]:
-    """MAGICC7's regional pattern of volcanic forcing, behind its internal efficacy.
-
-    MAGICC7 takes each box's mean forcing over the months from ``start_year``
-    to the end of ``last_year``, less the global mean and 1.
-    """
-    t = np.asarray(times, dtype=np.float64)
-    nh = np.asarray(northern, dtype=np.float64)
-    sh = np.asarray(southern, dtype=np.float64)
-    ok = ~(np.isnan(nh) | np.isnan(sh)) & (t >= start_year) & (t < last_year + 1)
-    # Sequential sums of the scaled values, as MAGICC7 adds them.
-    north, south = (np.cumsum(x[ok] * scale)[-1] / ok.sum() for x in (nh, sh))
-    mean = float(area_mean([north, north, south, south]))
-    return (north - mean - 1, north - mean - 1, south - mean - 1, south - mean - 1)
-
-
 def volcanic_substeps(  # noqa: PLR0913
     times: ArrayLike,
     northern: ArrayLike,
@@ -568,8 +537,9 @@ def volcanic_substeps(  # noqa: PLR0913
     *,
     scale: float = 0.74,
     efficacy: float = 1.0,
-    internal_efficacy: float = 1.0078325986062864,
-    regional_pattern: Sequence[float] | None = None,
+    internal_efficacy: float | None = None,
+    regional_pattern_years: tuple[float, float] | None = None,
+    initial_erf_2xco2: float = 3.71,
     until: float | None = None,
 ) -> dict[str, object]:
     """Monthly volcanic forcing as ClimateUDEB's ``subannual_forcing``.
@@ -578,8 +548,10 @@ def volcanic_substeps(  # noqa: PLR0913
     at that time, matching MAGICC7's reading of ``.MON`` files.
     ClimateUDEB multiplies the values by ``scale`` and ``efficacy`` over the internal
     efficacy.
-    With ``regional_pattern`` it recalculates the internal efficacy each year,
-    and ``internal_efficacy`` applies only in the first year.
+    With ``regional_pattern_years`` it takes a regional pattern from the scaled months
+    ending in those years and recalculates the internal efficacy each year.
+    ``internal_efficacy`` applies only in the first years,
+    and unset ClimateUDEB derives it from the pattern at ``initial_erf_2xco2``.
     Months more than a year after ``until`` are left out, as no run to then reads them.
     The values are a read-only array that specs share, so never make it writeable.
     """
@@ -598,7 +570,8 @@ def volcanic_substeps(  # noqa: PLR0913
         "scale": scale,
         "internal_efficacy": internal_efficacy,
         "efficacy": efficacy,
+        "initial_erf_2xco2": initial_erf_2xco2,
     }
-    if regional_pattern is not None:
-        out["regional_pattern"] = list(regional_pattern)
+    if regional_pattern_years is not None:
+        out["regional_pattern_years"] = list(regional_pattern_years)
     return out

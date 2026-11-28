@@ -21,7 +21,7 @@ mod sea_level;
 mod terrestrial_carbon;
 
 pub use aerosol::{AerosolDirectParameters, AerosolIndirectParameters};
-pub use ch4_chemistry::CH4ChemistryParameters;
+pub use ch4_chemistry::{ch4_non_oh_lifetime, ch4_oh_lifetime, CH4ChemistryParameters};
 pub use ch4_oxidation::CH4OxidationParameters;
 pub use climate_udeb::{
     ClimateUDEBParameters, EfficacyMethod, OceanTemperatureProfile, SubannualForcing, CP_SEAWATER,

@@ -194,6 +194,9 @@ pub struct TerrestrialCarbonParameters {
     /// Feedbacks use the warming since this year, floored at zero.
     pub temperature_feedback_start_year: FloatValue,
 
+    /// Apply the temperature feedbacks on NPP, respiration and decay (MAGICC7 `CO2_TEMPFEEDBACK_SWITCH`)
+    pub include_temperature_feedback: bool,
+
     /// Pre-industrial plant pool carbon content (MAGICC7 `CO2_PLANTPOOL_INITIAL`)
     ///
     /// unit: GtC
@@ -279,6 +282,7 @@ impl Default for TerrestrialCarbonParameters {
             detritus_temperature_sensitivity: -0.1357817,
             soil_temperature_sensitivity: 0.1540879,
             temperature_feedback_start_year: 1900.0,
+            include_temperature_feedback: true,
 
             plant_pool_pi: 884.8584,
             detritus_pool_pi: 92.7738,

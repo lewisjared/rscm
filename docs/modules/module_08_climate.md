@@ -45,14 +45,15 @@ and the slow response of the deep ocean.
   As in MAGICC7, they are recalculated each year from the previous year's equilibrium climate sensitivity,
   so they drift as the climate warms.
 - Monthly volcanic forcing enters through the `subannual_forcing` parameter.
-  `rscm.magicc.prescribed.volcanic_pattern` reproduces MAGICC7's regional pattern,
-  which is derived from the run itself:
-  the mean monthly box forcing, scaled by `RF_VOLCANIC_SCALE`,
-  from the first year to `RF_VOLC_FORC_PATTERN_MAX_LAST_YEAR` or the run's last year if earlier,
+  With `regional_pattern_years`, ClimateUDEB derives MAGICC7's regional pattern from the forcing itself:
+  the mean monthly box forcing, times `scale`, over substeps ending in those years,
   less its global mean and 1.
+  MAGICC7 takes the years from the first year to `RF_VOLC_FORC_PATTERN_MAX_LAST_YEAR`
+  or the run's last year if earlier.
   The global mean sums box times area, as MAGICC7 does, because the hemispheric mean rounds differently.
   Substeps 1 to 11 take the previous year's volcanic internal efficacy and substep 12 the current one.
-  The first year keeps the initial value.
+  The first year keeps the initial `internal_efficacy`.
+  Unset, it is the pattern's internal efficacy from LAMCALC at `ecs` and `initial_erf_2xco2`.
 
 ## Equations
 

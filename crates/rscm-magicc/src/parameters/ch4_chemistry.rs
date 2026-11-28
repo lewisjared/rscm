@@ -166,19 +166,35 @@ impl Default for CH4ChemistryParameters {
     }
 }
 
+/// Combined CH4 lifetime against soil, stratospheric and tropospheric chlorine loss
+///
+/// $$\frac{1}{\tau_{other}} = \frac{1}{\tau_{soil}} + \frac{1}{\tau_{strat}} + \frac{1}{\tau_{trop\_cl}}$$
+pub fn ch4_non_oh_lifetime(
+    soil_lifetime: FloatValue,
+    stratospheric_lifetime: FloatValue,
+    tropospheric_cl_lifetime: FloatValue,
+) -> FloatValue {
+    1.0 / (1.0 / soil_lifetime + 1.0 / stratospheric_lifetime + 1.0 / tropospheric_cl_lifetime)
+}
+
+/// CH4 OH lifetime from the total and non-OH lifetimes, $1 / (1/\tau_{total} - 1/\tau_{other})$
+pub fn ch4_oh_lifetime(total_lifetime: FloatValue, non_oh_lifetime: FloatValue) -> FloatValue {
+    1.0 / (1.0 / total_lifetime - 1.0 / non_oh_lifetime)
+}
+
 impl CH4ChemistryParameters {
-    /// Calculate the combined non-OH lifetime
-    ///
-    /// $$\frac{1}{\tau_{other}} = \frac{1}{\tau_{soil}} + \frac{1}{\tau_{strat}} + \frac{1}{\tau_{trop\_cl}}$$
+    /// Combined non-OH lifetime, see [`ch4_non_oh_lifetime`]
     pub fn non_oh_lifetime(&self) -> FloatValue {
-        1.0 / (1.0 / self.soil_lifetime
-            + 1.0 / self.stratospheric_lifetime
-            + 1.0 / self.tropospheric_cl_lifetime)
+        ch4_non_oh_lifetime(
+            self.soil_lifetime,
+            self.stratospheric_lifetime,
+            self.tropospheric_cl_lifetime,
+        )
     }
 
-    /// Initial OH lifetime, $1 / (1/\tau_{total,init} - 1/\tau_{other})$
+    /// Initial OH lifetime, see [`ch4_oh_lifetime`]
     pub fn initial_oh_lifetime(&self) -> FloatValue {
-        1.0 / (1.0 / self.initial_ch4_lifetime - 1.0 / self.non_oh_lifetime())
+        ch4_oh_lifetime(self.initial_ch4_lifetime, self.non_oh_lifetime())
     }
 }
 

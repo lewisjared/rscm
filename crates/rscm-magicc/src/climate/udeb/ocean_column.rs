@@ -181,7 +181,9 @@ impl ClimateUDEB {
         let w_min = (1.0 - self.parameters.upwelling_variable_fraction) * w_0;
         let thresholds = [
             self.parameters.upwelling_threshold_temperature_nh,
-            self.parameters.upwelling_threshold_temperature_sh,
+            self.parameters
+                .upwelling_threshold_temperature_sh
+                .unwrap_or(self.parameters.upwelling_threshold_temperature_nh),
         ];
         for (hemi, thr) in thresholds.into_iter().enumerate() {
             let x = (fw * global_temp) / thr;

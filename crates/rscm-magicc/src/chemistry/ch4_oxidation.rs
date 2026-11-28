@@ -90,7 +90,7 @@ impl CH4Oxidation {
     ) -> (CH4Pools, FloatValue) {
         let p = &self.parameters;
         let (start, end) = concentration;
-        let sink_ppb = (1.0 / oh_lifetime + 1.0 / p.non_oh_lifetime) * ((start + end) * 0.5);
+        let sink_ppb = (1.0 / oh_lifetime + 1.0 / p.non_oh_lifetime()) * ((start + end) * 0.5);
         let budget = (end - start + sink_ppb) * p.tg_per_ppb * p.mixing_box_size
             - p.natural_emissions
             - sources.permafrost;
@@ -224,7 +224,7 @@ mod tests {
     #[test]
     fn test_only_fossil_share_is_oxidised() {
         let component = CH4Oxidation::new();
-        let total_lifetime = 1.0 / (1.0 / 9.0 + 1.0 / component.parameters.non_oh_lifetime);
+        let total_lifetime = 1.0 / (1.0 / 9.0 + 1.0 / component.parameters.non_oh_lifetime());
         let sink = 700.0 * CONV / total_lifetime;
         let (_, all_fossil) = component.solve_oxidation(
             pools(700.0 * CONV, 0.0, 0.0),

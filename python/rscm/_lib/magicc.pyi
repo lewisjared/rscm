@@ -57,7 +57,7 @@ class ClimateUDEBParameters(TypedDict, total=False):
     initial_upwelling_rate: float
     upwelling_variable_fraction: float
     upwelling_threshold_temperature_nh: float
-    upwelling_threshold_temperature_sh: float
+    upwelling_threshold_temperature_sh: float | None
     ecs: float
     erf_2xco2: float
     land_ocean_warming_ratio: float
@@ -113,8 +113,8 @@ class ClimateUDEBBuilder(ComponentBuilder):
       upwelling.
     - `upwelling_threshold_temperature_nh` (`float`, default `8.0`): Temperature
       threshold for NH upwelling shutdown (K).
-    - `upwelling_threshold_temperature_sh` (`float`, default `8.0`): Temperature
-      threshold for SH upwelling shutdown (K).
+    - `upwelling_threshold_temperature_sh` (`float | None`, default `None`): Temperature
+      threshold for SH upwelling shutdown (K), the NH threshold when unset.
     - `ecs` (`float`, default `3.0`): Equilibrium climate sensitivity (K).
     - `erf_2xco2` (`float`, default `3.71`): 2xCO2 effective radiative forcing (W/m^2).
     - `land_ocean_warming_ratio` (`float`, default `1.317`): Land-ocean warming ratio.
@@ -192,6 +192,13 @@ class ClimateUDEBBuilder(ComponentBuilder):
         self, regional_pattern: tuple[float, float, float, float]
     ) -> float:
         """Return the internal efficacy of an agent with this regional pattern."""
+    def subannual_efficacy(
+        self,
+    ) -> tuple[tuple[float, float, float, float] | None, float] | None:
+        """Regional pattern and first-years internal efficacy of the subannual forcing.
+
+        Unset ones are derived. Returns ``None`` without subannual forcing.
+        """
     @staticmethod
     def from_parameters(parameters: ClimateUDEBParameters) -> ClimateUDEBBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
@@ -208,8 +215,12 @@ class SubannualForcing(TypedDict, total=False):
     values: Required[list[tuple[float, float, float, float]] | NDArray[np.float64]]
     scale: float
     regional_pattern: tuple[float, float, float, float] | None
+    regional_pattern_years: tuple[float, float] | None
+    """First and last year of the substeps giving an unset ``regional_pattern``."""
     efficacy: float
-    internal_efficacy: float
+    internal_efficacy: float | None
+    """Unset, that of the pattern at ``initial_erf_2xco2``, or 1 without one."""
+    initial_erf_2xco2: float
 
 class ThermalExpansion(TypedDict, total=False):
     """Thermal expansion of the ocean, calculated by ClimateUDEB.
@@ -401,6 +412,10 @@ class CH4ChemistryBuilder(ComponentBuilder):
     @staticmethod
     def from_parameters(parameters: CH4ChemistryParameters) -> CH4ChemistryBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
+    def non_oh_lifetime(self) -> float:
+        """Return the CH4 lifetime in yr against soil, stratospheric and Cl loss."""
+    def initial_oh_lifetime(self) -> float:
+        """Return the CH4 lifetime in yr against OH at the start."""
     def build(self) -> RustComponent:
         """Build the CH4 chemistry component."""
 
@@ -415,7 +430,9 @@ class CH4OxidationParameters(TypedDict, total=False):
     permafrost_fraction: float
     tg_per_ppb: float
     mixing_box_size: float
-    non_oh_lifetime: float
+    soil_lifetime: float
+    stratospheric_lifetime: float
+    tropospheric_cl_lifetime: float
     natural_emissions: float
 
 @final
@@ -439,6 +456,8 @@ class CH4OxidationBuilder(ComponentBuilder):
     @staticmethod
     def from_parameters(parameters: CH4OxidationParameters) -> CH4OxidationBuilder:  # type: ignore[override]
         """Create a builder from a parameter dictionary."""
+    def initial_values(self, ch4_concentration: float) -> dict[str, float]:
+        """Return initial CH4 burdens at ``ch4_concentration`` ppb, all natural."""
     def build(self) -> RustComponent:
         """Build the CH4 oxidation component."""
 
@@ -554,7 +573,10 @@ class HalocarbonChemistryParameters(TypedDict, total=False):
     air_molar_mass: float
     atmosphere_mass: float
     include_variable_oh_lifetime: bool
-    initial_ch4_oh_lifetime: float
+    initial_ch4_lifetime: float
+    ch4_soil_lifetime: float
+    ch4_stratospheric_lifetime: float
+    ch4_tropospheric_cl_lifetime: float
     include_variable_stratospheric_lifetime: bool
     meridional_flux_reference_year: float
     meridional_flux_change_per_degree: float
@@ -632,6 +654,7 @@ class TerrestrialCarbonParameters(TypedDict, total=False):
     detritus_temperature_sensitivity: float
     soil_temperature_sensitivity: float
     temperature_feedback_start_year: float
+    include_temperature_feedback: bool
     plant_pool_pi: float
     detritus_pool_pi: float
     soil_pool_pi: float
@@ -1194,6 +1217,8 @@ class ForcingAgent(TypedDict, total=False):
     hemispheric: bool
     use_co2_internal_efficacy: bool
     """Take the internal efficacy from LAMCALC's CO2 response, as MAGICC7 does."""
+    scale: float
+    """Factor on the ERF before the efficacy, such as MAGICC7's ``RF_SOLAR_SCALE``."""
     efficacy: float
     internal_efficacy: float
     sum_of: list[str]

@@ -491,7 +491,8 @@ impl TerrestrialCarbon {
         let co2_ref = state.co2_ref;
 
         // Step 3: Temperature feedback factors
-        let apply_temp = current_year.is_none_or(|y| y >= p.temperature_feedback_start_year);
+        let apply_temp = p.include_temperature_feedback
+            && current_year.is_none_or(|y| y >= p.temperature_feedback_start_year);
         let temp = if apply_temp { temperature } else { 0.0 };
 
         let temp_npp = self.temperature_factor(temp, p.npp_temperature_sensitivity);
@@ -1138,6 +1139,26 @@ mod tests {
             flux_warm,
             flux_cold
         );
+    }
+
+    #[test]
+    fn test_excluded_temperature_feedback_matches_zero_sensitivities() {
+        let defaults = TerrestrialCarbonParameters::default();
+        let excluded = TerrestrialCarbon::from_parameters(TerrestrialCarbonParameters {
+            include_temperature_feedback: false,
+            ..defaults.clone()
+        });
+        let zeroed = TerrestrialCarbon::from_parameters(TerrestrialCarbonParameters {
+            npp_temperature_sensitivity: 0.0,
+            respiration_temperature_sensitivity: 0.0,
+            detritus_temperature_sensitivity: 0.0,
+            soil_temperature_sensitivity: 0.0,
+            ..defaults.clone()
+        });
+        let co2 = defaults.co2_pi * 1.5;
+        let warm = |c: &TerrestrialCarbon| c.solve_pools(co2, 3.0, 0.0, pi_pools(), 1.0);
+        assert_eq!(warm(&excluded), warm(&zeroed));
+        assert_ne!(warm(&excluded), warm(&default_component()));
     }
 
     #[test]
