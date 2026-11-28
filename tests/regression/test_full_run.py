@@ -27,6 +27,7 @@ from rscm._lib.magicc import (
 from rscm.core import VariableRole
 from rscm.interop import from_inputs
 from rscm.magicc import emissions_driven, full
+from rscm.magicc import model as magicc_model
 from rscm.magicc import prescribed as pr
 from rscm.names import (
     EFFICACY_ADJUSTED_ERF,
