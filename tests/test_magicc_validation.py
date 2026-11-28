@@ -402,8 +402,15 @@ def test_feedback_start_years_outside_the_run_match_its_ends():
         "n2o_feed_yrstart",
     )
 
+    # Emissions-driven from the start, so every feedback reaches the concentrations.
+    switches = {
+        f"{gas}_switchfromconc2emis_year": years[0] for gas in ("co2", "ch4", "n2o")
+    }
+
     def run(start):
-        config, inputs = translate(years=years, parameters=dict.fromkeys(starts, start))
+        config, inputs = translate(
+            years=years, parameters={**switches, **dict.fromkeys(starts, start)}
+        )
         model = emissions_driven.setup_model(
             config, inputs, TimeAxis.from_values(years)
         ).run()
@@ -415,6 +422,12 @@ def test_feedback_start_years_outside_the_run_match_its_ends():
                 "Atmospheric Concentrations|N2O",
             )
         }
+
+    inside = run(years[15])
+    assert any(
+        not np.array_equal(values, inside[name])
+        for name, values in run(years[0]).items()
+    )
 
     for outside, end in ((1700.0, years[0]), (3000.0, years[-1])):
         expected = run(end)
@@ -764,6 +777,19 @@ def test_initial_ch4_burden_follows_tg_per_ppb():
         return _run_short(edit)["Atmospheric Burden|CH4|Natural"][0]
 
     assert ch4(5.5) == 2 * ch4(2.75)
+
+
+def test_configured_ch4_burdens_come_out_of_the_natural_burden():
+    def natural(fossil):
+        config, inputs = translate(years=SHORT)
+        config["initial_values"]["Atmospheric Burden|CH4|Fossil"] = fossil
+        model = emissions_driven.setup_model(
+            config, inputs, TimeAxis.from_values(SHORT)
+        ).run()
+        ts = model.timeseries()
+        return ts.get_timeseries_by_name("Atmospheric Burden|CH4|Natural").values()[0]
+
+    assert natural(100.0) == pytest.approx(natural(0.0) - 100.0)
 
 
 def test_carbon_temperature_feedback_can_be_excluded():

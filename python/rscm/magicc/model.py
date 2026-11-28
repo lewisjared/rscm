@@ -57,6 +57,7 @@ from rscm.core import (
 from rscm.interop import _grid_of, from_inputs
 from rscm.magicc import prescribed as pr
 from rscm.names import (
+    ATMOSPHERIC_BURDEN_CH4_NATURAL,
     ATMOSPHERIC_CONCENTRATIONS_CH4,
     ATMOSPHERIC_CONCENTRATIONS_CO2,
     EFFICACY_ADJUSTED_ERF,
@@ -379,6 +380,12 @@ def setup(  # noqa: PLR0913
     ch4 = config["initial_values"].get(ATMOSPHERIC_CONCENTRATIONS_CH4)
     if "CH4Oxidation" in specs and ch4 is not None:
         burdens = specs["CH4Oxidation"].configure().initial_values(ch4)
+        # Sources must sum to the initial CH4, so configured ones reduce the natural.
+        burdens[ATMOSPHERIC_BURDEN_CH4_NATURAL] -= sum(
+            config["initial_values"].get(name, 0.0)
+            for name in burdens
+            if name != ATMOSPHERIC_BURDEN_CH4_NATURAL
+        )
     spec = ModelSpec(
         components=specs,
         lags=LAGS,
